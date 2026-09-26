@@ -11,6 +11,9 @@
 
 Built on the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), this server allows AI assistants (like Claude Desktop, Cursor, GitHub Copilot CLI, etc.) to securely interact with your Android device running [Termux](https://termux.dev).
 
+> [!NOTE]
+> **Active Maintenance & Fixes**: This repository is actively maintained. Compared to the upstream project, known bugs have been addressed and optimized (including environment variables, session lifecycles, execution timeouts, and response truncation). If you encounter any issues or have feature requests, please feel free to **open an Issue** — they will be handled promptly!
+
 ### ✨ Features
 
 - **Full Termux Environment**: Executes commands within Termux's native environment (`/data/data/com.termux/files/usr/bin`), retaining path resolution and shell behavior.
@@ -74,6 +77,9 @@ Replace `<PHONE_IP>` with your phone's Wi-Fi IP address (displayed in server con
 > 将你的 Android 手机打造成面向 AI 助手的 MCP 服务端 —— 通过 Termux 提供强大的 Shell 与设备控制能力。
 
 本项目基于 [Model Context Protocol (MCP)](https://modelcontextprotocol.io)，让 AI 编程助手（如 Claude Desktop、Cursor、GitHub Copilot CLI 等）能够直接与运行 [Termux](https://termux.dev) 的安卓设备无缝交互。
+
+> [!NOTE]
+> **长期维护与已知问题修复**：本项目为一个**长期活跃维护**的版本。相较原版，我们对已知的大多数缺陷与体验问题进行了针对性修改与重构（如 Termux 原生环境变量加载、会话生命周期回收、超时与大流量输出折叠等）。如果您在使用过程中遇到任何问题或有新功能需求，欢迎随时提交 **Issue**，我们会尽快响应和修复！
 
 ### ✨ 功能特点
 
