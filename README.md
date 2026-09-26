@@ -1,229 +1,135 @@
 # 📱 phone-mcp-server
 
-> Turn your Android phone into an MCP server for AI assistants — control SMS, contacts, flashlight, clipboard, and more via Termux.
+[English](#english) | [中文说明](#中文说明)
 
-Your AI assistant can now **send texts, read your call log, toggle your flashlight, take photos, get your GPS location**, and much more — all through your Android phone running [Termux](https://termux.dev).
+---
 
-Built on the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), this server works with any MCP-compatible client: **GitHub Copilot CLI**, **Claude Desktop**, **Cursor**, and others.
+<a name="english"></a>
+## English
 
-## ✨ What Can It Do?
+> Turn your Android phone into an MCP server for AI assistants — powerful shell and device integration via Termux.
 
-This server exposes **18 tools** that let AI assistants interact with your phone:
+Built on the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), this server allows AI assistants (like Claude Desktop, Cursor, GitHub Copilot CLI, etc.) to securely interact with your Android device running [Termux](https://termux.dev).
 
-| # | Tool | Description |
-|---|------|-------------|
-| 1 | `send_sms` | Send an SMS text message |
-| 2 | `read_sms` | Read recent SMS/MMS messages from inbox |
-| 3 | `get_contacts` | Get all contacts (name, number, email) |
-| 4 | `get_location` | Get current GPS location |
-| 5 | `get_battery` | Get battery level, status, and temperature |
-| 6 | `get_clipboard` | Read the phone's clipboard |
-| 7 | `set_clipboard` | Set the phone's clipboard content |
-| 8 | `take_photo` | Take a photo with front or back camera |
-| 9 | `get_call_log` | Get recent call history |
-| 10 | `make_call` | Initiate a phone call |
-| 11 | `get_wifi_info` | Get WiFi connection details |
-| 12 | `flashlight` | Turn the flashlight on/off |
-| 13 | `vibrate` | Make the phone vibrate |
-| 14 | `send_notification` | Show a notification on the phone |
-| 15 | `get_volume` | Get volume levels for all audio streams |
-| 16 | `set_volume` | Set volume for a specific audio stream |
-| 17 | `record_audio` | Record audio from the microphone |
-| 18 | `device_info` | Get comprehensive device info |
-| — | `shell` | Run a shell command (with safety filters) |
+### ✨ Features
 
-## 📋 Prerequisites
+- **Full Termux Environment**: Executes commands within Termux's native environment (`/data/data/com.termux/files/usr/bin`), retaining path resolution and shell behavior.
+- **Robust Shell Tool**:
+  - Configurable timeouts (default: 60s).
+  - Smart output truncation (protecting client context from massive terminal dumps).
+  - Detailed runtime execution profiling and exit-code reporting.
+- **MCP Streamable HTTP Transport**: Modern HTTP transport supporting multi-session MCP clients.
+- **Service Management**: Includes `restart.sh` helper script for easy background lifecycle management.
 
-- **Android phone** (any reasonably modern version)
-- **[Termux](https://f-droid.org/en/packages/com.termux/)** — install from F-Droid (not Google Play — the Play Store version is outdated)
-- **[Termux:API](https://f-droid.org/en/packages/com.termux.api/)** — install from F-Droid (same source as Termux)
-- **Computer and phone on the same WiFi network**
+### 📋 Prerequisites
 
-> ⚠️ **Important:** Both Termux and Termux:API must be installed from the **same source** (F-Droid). Mixing sources will cause signature mismatches.
+- **Android Phone**
+- **[Termux](https://f-droid.org/en/packages/com.termux/)** installed from F-Droid
+- **Node.js**: `pkg install nodejs-lts`
 
-## 🚀 Setup
+### 🚀 Quick Start
 
-### 1. Install Termux packages
-
-Open Termux on your phone and run:
+#### 1. Installation
 
 ```bash
-# Update package list
-pkg update && pkg upgrade
-
-# Install Node.js and the Termux API bridge
-pkg install nodejs-lts termux-api
-
-# Grant Termux:API permissions (run each and accept the prompts)
-termux-sms-list          # grants SMS permission
-termux-contact-list      # grants contacts permission
-termux-location          # grants location permission
-termux-camera-photo      # grants camera permission
-termux-call-log          # grants call log permission
-```
-
-### 2. Clone and install
-
-```bash
-# Clone the repo
-git clone https://github.com/htekdev/phone-mcp-server.git
+git clone https://github.com/mgyanik/phone-mcp-server.git
 cd phone-mcp-server
-
-# Install dependencies
 npm install
 ```
 
-### 3. Start the server
+#### 2. Running the Server
 
+Start in foreground:
 ```bash
 node server.js
 ```
 
-You'll see output like:
-
-```
-[phone-mcp] ========================================
-[phone-mcp]  phone-mcp-server is running!
-[phone-mcp]    Local:   http://localhost:3000/mcp
-[phone-mcp]    Network: http://192.168.1.42:3000/mcp
-[phone-mcp]    Health:  http://192.168.1.42:3000/health
-[phone-mcp]    Tools:   18 phone tools via Termux:API
-[phone-mcp] ========================================
-```
-
-Note the **Network URL** — you'll need it for your MCP client config.
-
-### 4. Verify it's working
-
-From your computer (on the same WiFi), hit the health endpoint:
-
+Or run in background / restart:
 ```bash
-curl http://192.168.1.42:3000/health
-# {"status":"ok","server":"phone-mcp","version":"1.0.0","uptime":12.3,"tools":18}
+chmod +x restart.sh
+./restart.sh
 ```
 
-## 🔌 Connecting to an MCP Client
+#### 3. MCP Client Configuration
 
-### GitHub Copilot CLI
-
-Add to your MCP config file (`.github/copilot/mcp.json` in a repo, or global config):
+Add to your MCP client config (e.g. `claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "phone": {
-      "url": "http://192.168.1.42:3000/mcp"
+      "url": "http://<PHONE_IP>:3000/mcp"
     }
   }
 }
 ```
 
-Replace `192.168.1.42` with your phone's actual IP address.
-
-### Claude Desktop
-
-Add to your Claude Desktop config (`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "phone": {
-      "url": "http://192.168.1.42:3000/mcp"
-    }
-  }
-}
-```
-
-### Any MCP Client
-
-The server uses **Streamable HTTP transport** on the `/mcp` endpoint. Point any MCP-compatible client at `http://<phone-ip>:3000/mcp`.
-
-## 💡 Usage Examples
-
-Once connected, you can ask your AI assistant things like:
-
-- *"Read my last 5 text messages"*
-- *"Send a text to +15551234567 saying I'll be there in 10 minutes"*
-- *"What's my battery level?"*
-- *"Turn on the flashlight"*
-- *"Where is my phone right now?"*
-- *"Take a photo with the front camera"*
-- *"What WiFi network am I connected to?"*
-- *"Show a notification on my phone that says 'Hello from AI'"*
-- *"Set my music volume to 8"*
-- *"Who called me recently?"*
-
-## ⚙️ Configuration
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--port <number>` | `3000` | Server port |
-| `--verbose` / `-v` | off | Enable debug logging |
-| `PORT` env var | `3000` | Server port (env var) |
-
-```bash
-# Custom port
-node server.js --port 8080
-
-# Debug mode
-node server.js --verbose
-
-# Using env var
-PORT=8080 node server.js
-```
-
-## 🔒 Security Notes
-
-- The server binds to `0.0.0.0` — any device on your local network can connect.
-- The `shell` tool has basic safety filters (blocks `rm -rf /`, `mkfs`, `reboot`, etc.) but is inherently powerful. Consider removing it if you're concerned.
-- There is **no authentication** by default. Only run this on trusted networks.
-- For production use, consider adding API key authentication via a middleware.
-
-## ⚠️ Known Limitations
-
-- **RCS messages are NOT accessible** — `termux-sms-list` only reads SMS/MMS messages. If your phone uses RCS (Google Messages' default), your recent conversations may not appear.
-- **WiFi-only** — your computer and phone must be on the same network. For remote access, you could use a tunnel like [ngrok](https://ngrok.com) or [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/).
-- **GPS location can be slow** — the first GPS fix may take 30-60 seconds. Use `provider: "network"` for faster (but less accurate) location.
-- **Camera photos** are saved to Termux's internal storage — you'll need to copy them out or use `termux-open` to view them.
-- **Termux:API permissions** — each API command needs its Android permission granted on first use. Run the commands manually once to trigger the permission prompts.
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────┐     HTTP/MCP      ┌──────────────────┐
-│  MCP Client         │ ──────────────▶   │  phone-mcp       │
-│  (Copilot CLI,      │                   │  (Express +      │
-│   Claude Desktop)   │ ◀──────────────   │   MCP SDK)       │
-└─────────────────────┘                   └────────┬─────────┘
-                                                   │
-                                          execFile("termux-*")
-                                                   │
-                                          ┌────────▼─────────┐
-                                          │  Termux:API      │
-                                          │  (Android APIs)  │
-                                          └──────────────────┘
-```
-
-- **Express** handles HTTP routing
-- **@modelcontextprotocol/sdk** provides MCP protocol handling with Streamable HTTP transport
-- **Termux:API** bridges to Android system APIs (SMS, contacts, camera, etc.)
-- **Zod** validates tool input schemas
-
-## 📄 License
-
-MIT — see [LICENSE](LICENSE).
-
-## 🤝 Contributing
-
-PRs welcome! Some ideas for contributions:
-
-- [ ] Add authentication (API key or bearer token)
-- [ ] Support ngrok/tunnel auto-setup for remote access
-- [ ] Add more Termux:API tools (TTS, fingerprint, sensors)
-- [ ] Add a web dashboard showing connected sessions
-- [ ] Support for Termux:Widget shortcuts
-- [ ] Docker container for non-Termux environments (if applicable)
+Replace `<PHONE_IP>` with your phone's Wi-Fi IP address (displayed in server console output).
 
 ---
 
-Built by [Hector Rocha](https://htek.dev) • Made with ❤️ and AI
+<a name="中文说明"></a>
+## 中文说明
+
+> 将你的 Android 手机打造成面向 AI 助手的 MCP 服务端 —— 通过 Termux 提供强大的 Shell 与设备控制能力。
+
+本项目基于 [Model Context Protocol (MCP)](https://modelcontextprotocol.io)，让 AI 编程助手（如 Claude Desktop、Cursor、GitHub Copilot CLI 等）能够直接与运行 [Termux](https://termux.dev) 的安卓设备无缝交互。
+
+### ✨ 功能特点
+
+- **原生 Termux 运行环境**：自动注入 Termux 环境变量与 `$PREFIX/bin` 路径，完整保留 Termux 终端生态与工具链支持。
+- **增强型 Shell 工具**：
+  - 支持可配置超时控制（默认 60 秒）。
+  - 智能长输出折叠截断（避免命令输出过长刷屏撑爆 AI 上下文窗口）。
+  - 精确记录并展示每条命令的耗时和执行状态。
+- **MCP Streamable HTTP 协议**：基于官方标准 HTTP 传输协议，支持多客户端会话管理。
+- **便捷启停脚本**：附带 `restart.sh`，支持一键热重载与后台静默运行。
+
+### 📋 准备工作
+
+- **安卓手机**（Android 设备）
+- **[Termux](https://f-droid.org/en/packages/com.termux/)**（推荐从 F-Droid 下载安装）
+- **Node.js 环境**：`pkg install nodejs-lts`
+
+### 🚀 快速上手
+
+#### 1. 安装项目
+
+```bash
+git clone https://github.com/mgyanik/phone-mcp-server.git
+cd phone-mcp-server
+npm install
+```
+
+#### 2. 启动服务
+
+前台运行：
+```bash
+node server.js
+```
+
+或者使用重载脚本后台启动：
+```bash
+chmod +x restart.sh
+./restart.sh
+```
+
+#### 3. 配置 MCP 客户端
+
+在你的客户端配置（如 `claude_desktop_config.json`）中添加：
+
+```json
+{
+  "mcpServers": {
+    "phone": {
+      "url": "http://<手机局域网IP>:3000/mcp"
+    }
+  }
+}
+```
+
+将 `<手机局域网IP>` 替换为你手机当前的 Wi-Fi IP 地址（服务启动日志会打印具体地址）。
+
+### 📄 License
+
+MIT — see [LICENSE](LICENSE).

@@ -1,6 +1,8 @@
 node_modules/
 .env
 *.log
+*.bak
+*.bak_*
 photos/
 recordings/
 .DS_Store
