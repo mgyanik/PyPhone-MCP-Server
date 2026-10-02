@@ -56,7 +56,7 @@ CLAUDE.md         # 本文件
 | 读取单个 | `get_` | `get_file` |
 | 列出 | `list_` | `list_dir` |
 | 搜索 | `search_` | `search_texts` |
-| 执行命令 | `run_` | `run_safe_command` |
+| 执行命令 | `run_` | （命名示例，当前未实现） |
 | 任务启动/查询/取消 | `start_` / `get_` / `cancel_` | `start_task` |
 
 禁止：
@@ -181,6 +181,7 @@ annotations 保留是为了符合 MCP 规范并兼容其他客户端。
 - 新增工具却不注册、不补测试
 - 绕过 policy 直接执行命令
 - 提交未通过 make check 的代码
+- 只做任务单明确列出的事；发现其他可疑之处，报告，不要动手
 
 ## 13. 冲突处理
 
