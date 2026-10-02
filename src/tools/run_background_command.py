@@ -12,7 +12,7 @@ from src.registry import mcp
 
 @mcp.tool(
     name="run_background_command",
-    description="Spawn long-running background command asynchronously. Returns task_id immediately.",
+    description="Spawn long-running background command asynchronously (for tasks > 8s like compiling, downloading, verifying hashes, or long services). Returns task_id immediately. Use get_task_status to query status/output, and cancel_task to terminate the task.",
     annotations={"destructiveHint": True},
 )
 def run_background_command(command: str, cwd: str = ".") -> dict[str, Any]:

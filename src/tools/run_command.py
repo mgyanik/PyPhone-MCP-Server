@@ -30,7 +30,7 @@ def _truncate_output(text: str, max_bytes: int = MAX_OUTPUT_BYTES) -> str:
 
 @mcp.tool(
     name="run_command",
-    description="Execute command synchronously. Returns output, exit_code, duration immediately.",
+    description="Execute command synchronously (for quick tasks <= 8s). Returns output, exit_code, duration immediately. For time-consuming operations such as compiling, downloading, or verifying hashes (expected > 8s), MUST use run_background_command instead.",
     annotations={"destructiveHint": True},
 )
 def run_command(command: str, cwd: str = ".", timeout: float = 60.0) -> dict[str, Any]:
