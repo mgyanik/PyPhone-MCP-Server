@@ -5,4 +5,15 @@ node_modules/
 *.bak_*
 photos/
 recordings/
-.DS_Store
+*.DS_Store
+*.pid
+endpoints.txt
+
+# Python cache & virtualenv
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+session.txt
