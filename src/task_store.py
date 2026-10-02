@@ -43,7 +43,7 @@ class Task:
     task_id: str
     command: str
     cwd: str
-    status: str  # "running" | "done" | "failed" | "canceled"
+    status: str  # "running" | "done" | "failed" | "canceled" | "denied"
     start_time: float
     end_time: float | None = None
     exit_code: int | None = None
@@ -86,7 +86,7 @@ class TaskStore:
         now = time.time()
         to_delete = []
         for tid, t in self._tasks.items():
-            if t.status in ("done", "failed", "canceled") and t.end_time:
+            if t.status in ("done", "failed", "canceled", "denied") and t.end_time:
                 if (now - t.end_time) > self.completed_ttl:
                     to_delete.append(tid)
         for tid in to_delete:
@@ -120,22 +120,14 @@ class TaskStore:
             return task
 
         if pol_res.requires_confirmation:
-            task = Task(
+            structured_logging.structured(
+                "task_policy_ask_executed",
                 task_id=task_id,
                 command=command,
-                cwd=cwd,
-                status="denied",
-                start_time=now,
-                end_time=now,
-                error=f"需用户手动执行: {pol_res.reason}（不会自动执行）",
+                reason=pol_res.reason,
             )
-            with self._lock:
-                self._cleanup_expired_locked()
-                self._tasks[task_id] = task
-            structured_logging.structured("task_policy_requires_manual", task_id=task_id, command=command, reason=pol_res.reason)
-            return task
 
-        # ALLOW 状态继续正常启动
+        # ALLOW 与 ASK 状态继续正常启动
         task = Task(
             task_id=task_id,
             command=command,

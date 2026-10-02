@@ -152,12 +152,14 @@ mcp = MCPFacade(registry)
 
 
 def load_tools() -> None:
-    """导入并注册所有工具（批量工具、任务工具、移植的 shell 工具）。"""
+    """导入并注册所有工具（文件读写、目录检索、命令执行、后台任务）。"""
     # 导入工具模块以触发装饰器注册
-    import src.tools.get_file  # noqa: F401
+    import src.tools.read_file  # noqa: F401
+    import src.tools.edit_file  # noqa: F401
     import src.tools.list_dir  # noqa: F401
     import src.tools.search_text  # noqa: F401
-    import src.tools.start_task  # noqa: F401
+    import src.tools.run_command  # noqa: F401
+    import src.tools.run_background_command  # noqa: F401
     import src.tools.get_task_status  # noqa: F401
     import src.tools.list_tasks  # noqa: F401
     import src.tools.cancel_task  # noqa: F401

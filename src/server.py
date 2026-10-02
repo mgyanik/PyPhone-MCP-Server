@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import json
 import sys
+import time
 import uuid
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from typing import Any
 
 from src import logging as structured_logging
@@ -14,8 +16,8 @@ from src.registry import load_tools, registry
 # 活跃的 Session 集合
 _active_sessions: set[str] = set()
 
-HOST = "127.0.0.1"
-PORT = 3001
+HOST = os.environ.get("HOST", "0.0.0.0")
+PORT = int(os.environ.get("PORT", 3000))
 
 
 class MCPRequestHandler(BaseHTTPRequestHandler):
@@ -32,6 +34,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(body)))
         if session_id:
             self.send_header("Mcp-Session-Id", session_id)
@@ -51,14 +54,51 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             status=status,
         )
 
-    def do_GET(self) -> None:
-        """GET /mcp 返回 405，明确告知客户端不支持 SSE 长连接。
-        选 405 而非 501：Kelivo 把 >=500 当可重试，会死循环；
-        405 属于不可重试的 4xx，客户端会立即退出后台轮询。"""
-        self.send_response(405)
-        self.send_header("Allow", "POST")
+    def do_OPTIONS(self) -> None:
+        """支持 CORS 预检请求。"""
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id")
         self.send_header("Content-Length", "0")
         self.end_headers()
+
+    def do_GET(self) -> None:
+        """GET /mcp 支持 SSE 流式长连接握手与保活，允许客户端自动重试重连。"""
+        if self.path != "/mcp":
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        client_session = self.headers.get("Mcp-Session-Id")
+        if client_session:
+            _active_sessions.add(client_session)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        if client_session:
+            self.send_header("Mcp-Session-Id", client_session)
+        self.end_headers()
+
+        try:
+            self.wfile.write(b": keepalive\n\n")
+            self.wfile.flush()
+            # 单元测试注入（如 BytesIO 无 fileno）或显式指定无循环时直接返回
+            if getattr(self, "_no_sse_loop", False):
+                return
+            try:
+                self.wfile.fileno()
+            except Exception:
+                return
+            while True:
+                time.sleep(15)
+                self.wfile.write(b": keepalive\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
     def do_POST(self) -> None:
         if self.path != "/mcp":
@@ -113,11 +153,16 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             self._send_json_rpc(resp, status=200, session_id=session_id)
             return
 
-        # 2. 校验 Mcp-Session-Id 头
+        # 2. 校验并自动恢复 Mcp-Session-Id
         client_session = self.headers.get("Mcp-Session-Id")
-        if not client_session or client_session not in _active_sessions:
-            self._send_error(-32001, "Invalid or missing Mcp-Session-Id header", req_id=req_id, status=400)
+        if not client_session:
+            self._send_error(-32001, "Missing Mcp-Session-Id header", req_id=req_id, status=400)
             return
+
+        # 若服务端此前重启，内存会话丢失，客户端带原有效 session 请求时自动接纳恢复
+        if client_session not in _active_sessions:
+            _active_sessions.add(client_session)
+            structured_logging.structured("mcp_session_recovered", session_id=client_session)
 
         # ping 探活
         if method == "ping":
@@ -188,7 +233,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
 def run_server(host: str = HOST, port: int = PORT) -> None:
     load_tools()
     server_address = (host, port)
-    httpd = HTTPServer(server_address, MCPRequestHandler)
+    httpd = ThreadingHTTPServer(server_address, MCPRequestHandler)
+    httpd.daemon_threads = True
     print(f"[phone-mcp-py] listening on {host}:{port}", flush=True)
     try:
         httpd.serve_forever()

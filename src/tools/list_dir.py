@@ -69,11 +69,10 @@ def _list_single_dir(path: str) -> dict[str, Any]:
 
 @mcp.tool(
     name="list_dir",
-    description="列出目录内容。可一次传入多个目标，比逐个调用更快",
+    description="List directory contents. Supports batch paths.",
     annotations={"readOnlyHint": True},
 )
 def list_dir(paths: list[str] | str = ".") -> dict[str, Any]:
-    """列出目录内容。支持单个路径或批量路径，内部使用线程池并发处理。"""
     if isinstance(paths, str):
         target_paths = [paths]
     else:
@@ -82,19 +81,16 @@ def list_dir(paths: list[str] | str = ".") -> dict[str, Any]:
     start_total = time.time()
     max_workers = min(max(1, len(target_paths)), 8)
 
-    # 内部使用线程池并发，禁止串行 for 循环
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(_list_single_dir, p) for p in target_paths]
         results = [f.result() for f in futures]
 
     total_duration = round(time.time() - start_total, 4)
     success_count = sum(1 for r in results if r["status"] == "success")
-    summary = f"成功列出 {success_count}/{len(results)} 个目录，耗时 {total_duration:.3f}s"
 
     output = {
         "status": "success" if success_count == len(results) else "partial_success",
         "results": results,
-        "summary": summary,
         "total_dirs": len(results),
         "duration": total_duration,
     }
@@ -108,6 +104,5 @@ def list_dir(paths: list[str] | str = ".") -> dict[str, Any]:
     return output
 
 
-# 提供 list_dirs 内部兼容别名，不注册为 MCP tool
 def list_dirs(paths: list[str]) -> dict[str, Any]:
     return list_dir(paths)
