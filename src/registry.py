@@ -62,6 +62,11 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: dict[str, ToolDefinition] = {}
+        self._aliases: dict[str, str] = {}
+
+    def register_alias(self, alias_name: str, target_tool_name: str) -> None:
+        """注册工具别名，保证客户端无论调用主名或兼容别名均可正常解析。"""
+        self._aliases[alias_name] = target_tool_name
 
     def register(
         self,
@@ -115,7 +120,12 @@ class ToolRegistry:
         return func
 
     def get_tool(self, name: str) -> ToolDefinition | None:
-        return self._tools.get(name)
+        if name in self._tools:
+            return self._tools[name]
+        target = self._aliases.get(name)
+        if target:
+            return self._tools.get(target)
+        return None
 
     def list_tools(self) -> list[ToolDefinition]:
         return list(self._tools.values())
@@ -152,10 +162,14 @@ mcp = MCPFacade(registry)
 
 
 def load_tools() -> None:
-    """导入并注册所有工具（文件读写、目录检索、命令执行、后台任务）。"""
+    """导入并注册所有工具（文件读写、目录检索、命令执行、后台任务、系统设备与网络）。"""
     # 导入工具模块以触发装饰器注册
     import src.tools.read_file  # noqa: F401
+    import src.tools.read_file_lines  # noqa: F401
     import src.tools.edit_file  # noqa: F401
+    import src.tools.manage_file  # noqa: F401
+    import src.tools.get_file_info  # noqa: F401
+    import src.tools.file_info  # noqa: F401
     import src.tools.list_dir  # noqa: F401
     import src.tools.search_text  # noqa: F401
     import src.tools.run_command  # noqa: F401
@@ -163,3 +177,7 @@ def load_tools() -> None:
     import src.tools.get_task_status  # noqa: F401
     import src.tools.list_tasks  # noqa: F401
     import src.tools.cancel_task  # noqa: F401
+    import src.tools.fetch_url  # noqa: F401
+    import src.tools.find_process  # noqa: F401
+    import src.tools.kill_process  # noqa: F401
+    import src.tools.get_device_status  # noqa: F401

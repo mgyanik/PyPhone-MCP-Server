@@ -11,7 +11,16 @@ from src.registry import mcp
 
 @mcp.tool(
     name="cancel_task",
-    description="Gracefully terminate a running background task by task_id (uses terminate -> wait -> kill process lifecycle). Fails if task is already finished or nonexistent.",
+    description=(
+        "Gracefully terminate a running background task dispatched by run_background_command.\n"
+        "Parameters:\n"
+        "- task_id (str): The ID of the running task to abort.\n"
+        "Mechanism:\n"
+        "- First attempts graceful shutdown by sending SIGTERM.\n"
+        "- Waits up to 2 seconds for clean exit.\n"
+        "- Escalates to SIGKILL if the process fails to exit gracefully.\n"
+        "Usage guideline: Call this whenever a dispatched background job has hung or is no longer needed."
+    ),
     annotations={"destructiveHint": True},
 )
 def cancel_task(task_id: str) -> dict[str, Any]:

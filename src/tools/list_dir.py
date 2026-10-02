@@ -69,7 +69,16 @@ def _list_single_dir(path: str) -> dict[str, Any]:
 
 @mcp.tool(
     name="list_dir",
-    description="List directory contents (sorted directories first, then files with sizes). Supports passing multiple directory paths in [paths] for parallel batch exploration.",
+    description=(
+        "Explore directory contents sorted intuitively (directories first, then files with sizes) (replaces shell 'ls', 'dir').\n"
+        "Parameters:\n"
+        "- paths (list[str] | str, default: '.'): Single directory path or an array of directory paths.\n"
+        "Returns:\n"
+        "- entries: List of items with name, type ('directory' | 'file'), and size in bytes.\n"
+        "Usage guideline:\n"
+        "1. Pass an array of paths in [paths] to explore multiple directories concurrently.\n"
+        "2. Results are pre-sorted with folders at top for fast structure comprehension."
+    ),
     annotations={"readOnlyHint": True},
 )
 def list_dir(paths: list[str] | str = ".") -> dict[str, Any]:

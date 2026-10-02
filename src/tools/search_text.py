@@ -8,7 +8,7 @@ from typing import Any
 
 from src.core import logging as structured_logging
 from src.core.pool import map_concurrent
-from src.registry import mcp
+from src.registry import mcp, registry
 
 # 检索时应忽略的目录集合
 _EXCLUDED_DIRS = {
@@ -96,12 +96,34 @@ def _search_single_query(query: str, root_path: str, max_matches: int = 50) -> d
 
 
 @mcp.tool(
-    name="search_texts",
-    description="Fast parallel text pattern search across files with automatic directory pruning (.git, node_modules, cache). PREFER passing multiple search terms in [queries] for concurrent batch lookup rather than calling sequentially.",
+    name="search_text",
+    description=(
+        "Fast parallel keyword search across codebase with automatic directory pruning (replaces shell 'grep', 'rg', 'ack').\n"
+        "Parameters:\n"
+        "- queries (list[str] | str, optional): Single search string or an array of multiple search terms to match in parallel.\n"
+        "- query (str, optional): Single query string argument.\n"
+        "- path (str, default: '.'): Root directory or single file path to search.\n"
+        "Features & limits:\n"
+        "- Automatically ignores clutter folders: .git, node_modules, __pycache__, .venv, target, build, dist.\n"
+        "- Skips files larger than 5MB to avoid memory exhaustion.\n"
+        "- Returns file path, line number, and matching line snippet (up to 50 matches per query).\n"
+        "Usage guideline: Pass multiple search terms at once in [queries] to search in parallel instead of calling sequentially."
+    ),
     annotations={"readOnlyHint": True},
 )
-def search_texts(queries: list[str] | str, path: str = ".") -> dict[str, Any]:
-    target_queries = [queries] if isinstance(queries, str) else list(queries)
+def search_text(
+    queries: list[str] | str | None = None,
+    query: str | None = None,
+    path: str = ".",
+) -> dict[str, Any]:
+    target = queries if queries is not None else query
+    if target is None:
+        target_queries = []
+    elif isinstance(target, str):
+        target_queries = [target]
+    else:
+        target_queries = list(target)
+
     start_total = time.time()
 
     def _worker(q: str) -> dict[str, Any]:
@@ -120,7 +142,7 @@ def search_texts(queries: list[str] | str, path: str = ".") -> dict[str, Any]:
     }
 
     structured_logging.structured(
-        "batch_search_texts",
+        "search_text_called",
         queries_count=len(results),
         total_matches=total_matches,
         duration=total_duration,
@@ -128,14 +150,6 @@ def search_texts(queries: list[str] | str, path: str = ".") -> dict[str, Any]:
     return output
 
 
-def search_text(query: str, path: str = ".") -> dict[str, Any]:
-    res = search_texts([query], path=path)
-    single = res["results"][0]
-    return {
-        "status": single["status"],
-        "query": single["query"],
-        "matches": single.get("matches", []),
-        "count": single.get("count", 0),
-        "error": single.get("error"),
-        "duration": single["duration"],
-    }
+# 向后兼容别名与映射
+search_texts = search_text
+registry.register_alias("search_texts", "search_text")

@@ -11,7 +11,17 @@ from src.registry import mcp
 
 @mcp.tool(
     name="get_task_status",
-    description="Query background task status, execution duration, exit code, and terminal output by task_id. Use this to poll or check results of run_background_command.",
+    description=(
+        "Query status, runtime duration, exit code, and terminal stdout/stderr of an asynchronous background task.\n"
+        "Parameters:\n"
+        "- task_id (str): The task ID returned by run_background_command.\n"
+        "Returns:\n"
+        "- status: 'running', 'done', 'failed', 'canceled', 'denied', or 'not_found'.\n"
+        "- duration: Total execution time in seconds.\n"
+        "- exit_code: Process returncode (0 for success, non-zero for error, None while running).\n"
+        "- output: Full captured stdout and stderr (None while running, captured upon completion).\n"
+        "Usage guideline: Poll this tool every 1~3 seconds after starting a background command until status becomes 'done' or 'failed'."
+    ),
     annotations={"readOnlyHint": True},
 )
 def get_task_status(task_id: str) -> dict[str, Any]:

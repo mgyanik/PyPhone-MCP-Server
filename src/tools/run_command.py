@@ -30,10 +30,24 @@ def _truncate_output(text: str, max_bytes: int = MAX_OUTPUT_BYTES) -> str:
 
 @mcp.tool(
     name="run_command",
-    description="Execute command synchronously (for quick tasks <= 8s). Returns output, exit_code, duration immediately. For time-consuming operations such as compiling, downloading, or verifying hashes (expected > 8s), MUST use run_background_command instead.",
+    description=(
+        "⚠️ CRITICAL: 仅供用于工具做不到的时候使用！(ONLY use this tool when dedicated tools CANNOT accomplish the task).\n"
+        "专职工具替代清单（严禁使用 shell 命令替代）：\n"
+        "- 读取文件：必须使用 read_file 或 read_file_lines（切勿使用 cat, head, tail, sed）\n"
+        "- 编辑/创建文件：必须使用 edit_file（切勿使用 echo >, tee, sed -i）\n"
+        "- 移动/复制/删除文件：必须使用 manage_file（切勿使用 mv, cp, rm）\n"
+        "- 查看文件属性/哈希：必须使用 get_file_info（切勿使用 stat, ls -l, md5sum, sha256sum）\n"
+        "- 浏览目录内容：必须使用 list_dir（切勿使用 ls, find -maxdepth）\n"
+        "- 搜索文本关键字：必须使用 search_text（切勿使用 grep, rg, ack）\n"
+        "- 发送网络请求：必须使用 fetch_url（切勿使用 curl, wget 拼接命令，易发生转义失败）\n"
+        "- 查杀系统进程：必须使用 find_process / kill_process（切勿使用 ps | grep, lsof, pkill -9）\n"
+        "- 查询设备状态：必须使用 get_device_status（切勿使用 df, free, top）\n"
+        "适用场景：仅用于专用工具无法覆盖的必要操作（如 git commit/push、编译前后的特定 CLI 交互）。\n"
+        "硬性执行约束：默认硬执行超时仅为 5 秒 (timeout=5.0)。若预估耗时可能超过 5 秒（如编译构建、下载大文件、启动长服务、批量跑测），必须改用 run_background_command 派发后台任务，否则会被 5 秒强制中断！"
+    ),
     annotations={"destructiveHint": True},
 )
-def run_command(command: str, cwd: str = ".", timeout: float = 60.0) -> dict[str, Any]:
+def run_command(command: str, cwd: str = ".", timeout: float = 5.0) -> dict[str, Any]:
     cmd = command.strip()
     start_time = time.time()
 
@@ -130,5 +144,8 @@ def run_command(command: str, cwd: str = ".", timeout: float = 60.0) -> dict[str
     }
 
 
-# 向后兼容别名
+# 向后兼容别名与映射
 start_task = run_command
+from src.registry import registry
+registry.register_alias("start_task", "run_command")
+

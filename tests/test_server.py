@@ -107,14 +107,21 @@ def test_tools_list_all_renamed_tools():
     data = json.loads(body_part)
     names = {tool["name"] for tool in data["result"]["tools"]}
     expected = {
-        "read_files",
+        "read_file",
+        "read_file_lines",
         "edit_file",
+        "manage_file",
+        "get_file_info",
         "list_dir",
-        "search_texts",
+        "search_text",
         "run_command",
         "run_background_command",
         "get_task_status",
         "list_tasks",
         "cancel_task",
+        "fetch_url",
+        "find_process",
+        "kill_process",
+        "get_device_status",
     }
     assert expected == names
