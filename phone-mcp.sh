@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-SERVER_DIR="/data/data/com.termux/files/home/phone-mcp-server"
+SERVER_DIR="/data/data/com.termux/files/home/PyPhone-MCP-Server"
 SERVER_JS="$SERVER_DIR/server.js"
 NODE_BIN="/data/data/com.termux/files/usr/bin/node"
 PID_FILE="$SERVER_DIR/server.pid"
@@ -15,7 +15,7 @@ is_running() {
             return 0
         fi
     fi
-    if pgrep -f "node.*phone-mcp-server/server.js" >/dev/null 2>&1; then
+    if pgrep -f "node.*(phone-mcp-server|PyPhone-MCP-Server)/server.js" >/dev/null 2>&1; then
         return 0
     fi
     return 1
@@ -53,7 +53,7 @@ print_endpoints() {
 start() {
     if is_running; then
         local pid
-        pid=$(cat "$PID_FILE" 2>/dev/null || pgrep -f "node.*phone-mcp-server/server.js" | head -n 1)
+        pid=$(cat "$PID_FILE" 2>/dev/null || pgrep -f "node.*(phone-mcp-server|PyPhone-MCP-Server)/server.js" | head -n 1)
         echo "[phone-mcp] 服务已在运行 (PID: $pid)"
         print_endpoints
         return 0
@@ -87,10 +87,10 @@ stop() {
         fi
         rm -f "$PID_FILE" 2>/dev/null
     fi
-    pkill -f "node.*phone-mcp-server/server.js" 2>/dev/null || true
+    pkill -f "node.*(phone-mcp-server|PyPhone-MCP-Server)/server.js" 2>/dev/null || true
     sleep 0.5
     if is_running; then
-        pkill -9 -f "node.*phone-mcp-server/server.js" 2>/dev/null || true
+        pkill -9 -f "node.*(phone-mcp-server|PyPhone-MCP-Server)/server.js" 2>/dev/null || true
     fi
     rm -f "$ENDPOINTS_FILE" 2>/dev/null
     echo "[phone-mcp] 服务已停止"
@@ -105,7 +105,7 @@ restart() {
 status() {
     if is_running; then
         local pid
-        pid=$(cat "$PID_FILE" 2>/dev/null || pgrep -f "node.*phone-mcp-server/server.js" | head -n 1)
+        pid=$(cat "$PID_FILE" 2>/dev/null || pgrep -f "node.*(phone-mcp-server|PyPhone-MCP-Server)/server.js" | head -n 1)
         echo "[phone-mcp] 状态: 运行中 (PID: $pid)"
         print_endpoints
         local health
