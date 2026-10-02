@@ -51,6 +51,15 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             status=status,
         )
 
+    def do_GET(self) -> None:
+        """GET /mcp 返回 405，明确告知客户端不支持 SSE 长连接。
+        选 405 而非 501：Kelivo 把 >=500 当可重试，会死循环；
+        405 属于不可重试的 4xx，客户端会立即退出后台轮询。"""
+        self.send_response(405)
+        self.send_header("Allow", "POST")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_POST(self) -> None:
         if self.path != "/mcp":
             self.send_response(404)
