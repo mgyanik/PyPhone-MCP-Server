@@ -97,7 +97,7 @@ def _search_single_query(query: str, root_path: str, max_matches: int = 50) -> d
 
 @mcp.tool(
     name="search_texts",
-    description="Search text patterns. Supports batch queries.",
+    description="Fast parallel text pattern search across files with automatic directory pruning (.git, node_modules, cache). PREFER passing multiple search terms in [queries] for concurrent batch lookup rather than calling sequentially.",
     annotations={"readOnlyHint": True},
 )
 def search_texts(queries: list[str] | str, path: str = ".") -> dict[str, Any]:

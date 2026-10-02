@@ -27,7 +27,7 @@ def _atomic_write(file_path: str, content: str) -> None:
 
 @mcp.tool(
     name="edit_file",
-    description="Edit file by unique string replacement or create a new file.",
+    description="Edit file atomically by unique string replacement (set old_text and new_text) or whole-file create/overwrite (leave old_text empty and set create_if_missing=True). old_text must be unique within the file to prevent ambiguous edits.",
     annotations={"destructiveHint": True},
 )
 def edit_file(

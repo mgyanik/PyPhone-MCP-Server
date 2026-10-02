@@ -11,7 +11,7 @@ from src.registry import mcp
 
 @mcp.tool(
     name="get_task_status",
-    description="Query task status, exit code, duration and output.",
+    description="Query background task status, execution duration, exit code, and terminal output by task_id. Use this to poll or check results of run_background_command.",
     annotations={"readOnlyHint": True},
 )
 def get_task_status(task_id: str) -> dict[str, Any]:

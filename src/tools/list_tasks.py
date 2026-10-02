@@ -11,7 +11,7 @@ from src.registry import mcp
 
 @mcp.tool(
     name="list_tasks",
-    description="List all background tasks with status filter.",
+    description="List all background tasks with optional status filter (running, done, failed, canceled, denied) to monitor active and recent asynchronous jobs.",
     annotations={"readOnlyHint": True},
 )
 def list_tasks(status: str | None = None) -> dict[str, Any]:

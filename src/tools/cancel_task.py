@@ -11,7 +11,7 @@ from src.registry import mcp
 
 @mcp.tool(
     name="cancel_task",
-    description="Cancel a running background task.",
+    description="Gracefully terminate a running background task by task_id (uses terminate -> wait -> kill process lifecycle). Fails if task is already finished or nonexistent.",
     annotations={"destructiveHint": True},
 )
 def cancel_task(task_id: str) -> dict[str, Any]:

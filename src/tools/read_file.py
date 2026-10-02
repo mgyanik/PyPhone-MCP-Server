@@ -52,7 +52,7 @@ def _read_single_file(path: str) -> dict[str, Any]:
 
 @mcp.tool(
     name="read_files",
-    description="Read file contents. Supports batch paths.",
+    description="Read file contents. PREFER passing multiple file paths in [paths] for parallel batch reading to minimize roundtrips and token latency. Always batch related files together.",
     annotations={"readOnlyHint": True},
 )
 def read_files(paths: list[str] | str) -> dict[str, Any]:

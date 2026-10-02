@@ -69,7 +69,7 @@ def _list_single_dir(path: str) -> dict[str, Any]:
 
 @mcp.tool(
     name="list_dir",
-    description="List directory contents. Supports batch paths.",
+    description="List directory contents (sorted directories first, then files with sizes). Supports passing multiple directory paths in [paths] for parallel batch exploration.",
     annotations={"readOnlyHint": True},
 )
 def list_dir(paths: list[str] | str = ".") -> dict[str, Any]:
