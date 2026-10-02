@@ -218,25 +218,36 @@ app.delete("/mcp", async (req, res) => {
   }
 });
 
-function getLocalIP() {
+function getAllIPs() {
   const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
+  const list = [];
+  for (const [name, ifaces] of Object.entries(interfaces)) {
+    for (const iface of ifaces) {
       if (iface.family === "IPv4" && !iface.internal) {
-        return iface.address;
+        list.push({ name, address: iface.address });
       }
     }
   }
-  return "127.0.0.1";
+  // Sort Wi-Fi (wlan) first
+  list.sort((a, b) => {
+    if (a.name.startsWith("wlan")) return -1;
+    if (b.name.startsWith("wlan")) return 1;
+    return 0;
+  });
+  return list;
 }
 
 app.listen(PORT, "0.0.0.0", () => {
-  const ip = getLocalIP();
+  const ips = getAllIPs();
   log("========================================");
   log(" phone-mcp-server is running!");
+  log('   Port:    ' + PORT);
   log('   Local:   http://localhost:' + PORT + '/mcp');
-  log('   Network: http://' + ip + ':' + PORT + '/mcp');
-  log('   Health:  http://' + ip + ':' + PORT + '/health');
+  for (const { name, address } of ips) {
+    const label = name.startsWith("wlan") ? "Wi-Fi" : (name.startsWith("tun") ? "VPN" : name);
+    log(`   ${label} (${name}): http://${address}:${PORT}/mcp`);
+  }
+  log('   Health:  http://localhost:' + PORT + '/health');
   log("   Tools:   1 tool (shell)");
   log("   Shell:   " + SHELL_BIN);
   log("========================================");
