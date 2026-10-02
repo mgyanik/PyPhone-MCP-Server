@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyphone-mcp-server"
+version = "0.2.0"
+description = "High-performance Model Context Protocol (MCP) server for Android/Termux."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[project.scripts]
+py-mcp-server = "src.server:run_server"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v"

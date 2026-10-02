@@ -1,4 +1,4 @@
-"""实时执行命令工具（同步等待并返回命令输出与状态）。"""
+"""实时前台同步执行命令工具。"""
 
 from __future__ import annotations
 
@@ -7,12 +7,10 @@ import subprocess
 import time
 from typing import Any
 
-from src import logging as structured_logging
-from src import policy
+from src.config import DEFAULT_ENV, MAX_OUTPUT_BYTES, SHELL_BIN, TERMUX_HOME
+from src.core import logging as structured_logging
+from src.core import policy
 from src.registry import mcp
-from src.task_store import DEFAULT_ENV, SHELL_BIN, TERMUX_HOME
-
-MAX_OUTPUT_BYTES = 50 * 1024
 
 
 def _truncate_output(text: str, max_bytes: int = MAX_OUTPUT_BYTES) -> str:
@@ -113,7 +111,6 @@ def run_command(command: str, cwd: str = ".", timeout: float = 60.0) -> dict[str
             output = stderr_clean
 
     output = _truncate_output(output)
-
     status = "timeout" if timed_out else ("success" if exit_code == 0 else "error")
 
     structured_logging.structured(
@@ -133,5 +130,5 @@ def run_command(command: str, cwd: str = ".", timeout: float = 60.0) -> dict[str
     }
 
 
-# 保持向后兼容别名
+# 向后兼容别名
 start_task = run_command

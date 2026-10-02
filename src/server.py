@@ -1,36 +1,32 @@
-"""标准库实现的轻量 MCP Streamable HTTP 服务端。"""
+"""标准库实现的轻量高并发 MCP Streamable HTTP 服务端。"""
 
 from __future__ import annotations
 
-import os
 import json
 import sys
 import time
-import uuid
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from src import logging as structured_logging
+from src.config import HOST, PORT
+from src.core import protocol
+from src.core.session import session_manager
 from src.registry import load_tools, registry
 
-# 活跃的 Session 集合
-_active_sessions: set[str] = set()
-
-HOST = os.environ.get("HOST", "0.0.0.0")
-PORT = int(os.environ.get("PORT", 3000))
+# 向后兼容测试用例直接访问的属性
+_active_sessions = session_manager._sessions
 
 
 class MCPRequestHandler(BaseHTTPRequestHandler):
     """处理 MCP JSON-RPC 2.0 协议请求。"""
 
     protocol_version = "HTTP/1.1"
-    server_version = "phone-mcp-py/0.1.0"
+    server_version = "phone-mcp-py/0.2.0"
 
     def log_message(self, format: str, *args: Any) -> None:
-        # 重定向请求访问日志到 stderr 或结构化日志，不污染标准输出
         sys.stderr.write(f"[HTTP] {self.address_string()} - {format % args}\n")
 
-    def _send_json_rpc(self, data: dict[str, Any], status: int = 200, session_id: str | None = None) -> None:
+    def _send_json(self, data: dict[str, Any], status: int = 200, session_id: str | None = None) -> None:
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -42,20 +38,10 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_error(self, code: int, message: str, req_id: Any = None, status: int = 400) -> None:
-        self._send_json_rpc(
-            {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "error": {
-                    "code": code,
-                    "message": message,
-                },
-            },
-            status=status,
-        )
+        self._send_json(protocol.make_error(req_id, code, message), status=status)
 
     def do_OPTIONS(self) -> None:
-        """支持 CORS 预检请求。"""
+        """CORS 预检响应。"""
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
@@ -64,7 +50,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
-        """GET /mcp 支持 SSE 流式长连接握手与保活，允许客户端自动重试重连。"""
+        """GET /mcp 支持 SSE 流式长连接握手与周期保活，允许客户端自动重连。"""
         if self.path != "/mcp":
             self.send_response(404)
             self.end_headers()
@@ -72,7 +58,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
 
         client_session = self.headers.get("Mcp-Session-Id")
         if client_session:
-            _active_sessions.add(client_session)
+            session_manager.validate_or_recover(client_session)
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -86,13 +72,15 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         try:
             self.wfile.write(b": keepalive\n\n")
             self.wfile.flush()
-            # 单元测试注入（如 BytesIO 无 fileno）或显式指定无循环时直接返回
+
+            # 单元测试环境注入退出开关或无实际套接字时快速返回
             if getattr(self, "_no_sse_loop", False):
                 return
             try:
                 self.wfile.fileno()
             except Exception:
                 return
+
             while True:
                 time.sleep(15)
                 self.wfile.write(b": keepalive\n\n")
@@ -101,6 +89,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             pass
 
     def do_POST(self) -> None:
+        """处理主要 MCP RPC 调用。"""
         if self.path != "/mcp":
             self.send_response(404)
             self.end_headers()
@@ -108,7 +97,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
 
         content_length_hdr = self.headers.get("Content-Length")
         if not content_length_hdr:
-            self._send_error(-32600, "Missing Content-Length header", status=400)
+            self._send_error(protocol.INVALID_REQUEST, "Missing Content-Length header", status=400)
             return
 
         try:
@@ -116,118 +105,75 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             raw_body = self.rfile.read(length).decode("utf-8")
             payload = json.loads(raw_body)
         except Exception as e:
-            self._send_error(-32700, f"Parse error: {e}", status=400)
+            self._send_error(protocol.PARSE_ERROR, f"Parse error: {e}", status=400)
             return
 
         req_id = payload.get("id")
         method = payload.get("method")
         params = payload.get("params", {})
 
-        # 处理通知类请求（以 notifications/ 开头，根据规范返回 202 空体）
+        # 通知类请求返回 202
         if method and method.startswith("notifications/"):
             self.send_response(202)
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
 
-        # 1. 初始化握手 (initialize)
+        # 1. 协议握手 (initialize)
         if method == "initialize":
-            session_id = uuid.uuid4().hex
-            _active_sessions.add(session_id)
-            structured_logging.structured("mcp_session_initialized", session_id=session_id)
-            
-            resp = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
+            session_id = session_manager.create()
+            resp = protocol.make_response(
+                req_id,
+                {
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": {},
-                    },
+                    "capabilities": {"tools": {}},
                     "serverInfo": {
                         "name": "phone-mcp-py",
-                        "version": "0.1.0",
+                        "version": "0.2.0",
                     },
                 },
-            }
-            self._send_json_rpc(resp, status=200, session_id=session_id)
+            )
+            self._send_json(resp, status=200, session_id=session_id)
             return
 
-        # 2. 校验并自动恢复 Mcp-Session-Id
+        # 2. 会话鉴权与重启恢复
         client_session = self.headers.get("Mcp-Session-Id")
         if not client_session:
-            self._send_error(-32001, "Missing Mcp-Session-Id header", req_id=req_id, status=400)
+            self._send_error(protocol.INVALID_SESSION, "Missing Mcp-Session-Id header", req_id=req_id, status=400)
             return
 
-        # 若服务端此前重启，内存会话丢失，客户端带原有效 session 请求时自动接纳恢复
-        if client_session not in _active_sessions:
-            _active_sessions.add(client_session)
-            structured_logging.structured("mcp_session_recovered", session_id=client_session)
+        session_manager.validate_or_recover(client_session)
 
-        # ping 探活
+        # 3. 探活 (ping)
         if method == "ping":
-            resp = {"jsonrpc": "2.0", "id": req_id, "result": {}}
-            self._send_json_rpc(resp, status=200, session_id=client_session)
+            self._send_json(protocol.make_response(req_id, {}), status=200, session_id=client_session)
             return
 
-        # 3. 列出工具 (tools/list)
+        # 4. 列出工具 (tools/list)
         if method == "tools/list":
             tools = [tool.to_mcp_format() for tool in registry.list_tools()]
-            resp = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "tools": tools,
-                },
-            }
-            self._send_json_rpc(resp, status=200, session_id=client_session)
+            self._send_json(
+                protocol.make_response(req_id, {"tools": tools}),
+                status=200,
+                session_id=client_session,
+            )
             return
 
-        # 4. 调用工具 (tools/call)
+        # 5. 调用工具 (tools/call)
         if method == "tools/call":
             tool_name = params.get("name")
             arguments = params.get("arguments", {})
             try:
                 result_data = registry.call_tool(tool_name, arguments)
-                # 遵循 MCP 规范封装 content
-                text_content = (
-                    json.dumps(result_data, ensure_ascii=False)
-                    if not isinstance(result_data, str)
-                    else result_data
-                )
-                resp = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": text_content,
-                            }
-                        ],
-                        "isError": False,
-                    },
-                }
-                self._send_json_rpc(resp, status=200, session_id=client_session)
+                resp = protocol.wrap_tool_result(req_id, result_data, is_error=False)
+                self._send_json(resp, status=200, session_id=client_session)
             except Exception as e:
-                resp = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": f"Error executing tool '{tool_name}': {e}",
-                            }
-                        ],
-                        "isError": True,
-                    },
-                }
-                self._send_json_rpc(resp, status=200, session_id=client_session)
+                resp = protocol.wrap_tool_result(req_id, f"Error executing tool '{tool_name}': {e}", is_error=True)
+                self._send_json(resp, status=200, session_id=client_session)
             return
 
         # 未知方法
-        self._send_error(-32601, f"Method not found: {method}", req_id=req_id, status=404)
+        self._send_error(protocol.METHOD_NOT_FOUND, f"Method not found: {method}", req_id=req_id, status=404)
 
 
 def run_server(host: str = HOST, port: int = PORT) -> None:

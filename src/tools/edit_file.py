@@ -1,13 +1,28 @@
-"""精确编辑或创建文件的工具。"""
+"""精准编辑或创建文件工具，支持原子写入。"""
 
 from __future__ import annotations
 
 import os
+import tempfile
 import time
 from typing import Any
 
-from src import logging as structured_logging
+from src.core import logging as structured_logging
 from src.registry import mcp
+
+
+def _atomic_write(file_path: str, content: str) -> None:
+    """原子化写入文件，避免并发读取时出现中间不完整状态。"""
+    dir_name = os.path.dirname(file_path) or "."
+    fd, tmp_path = tempfile.mkstemp(dir=dir_name, prefix=".tmp_mcp_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp_path, file_path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
 
 
 @mcp.tool(
@@ -30,8 +45,7 @@ def edit_file(
                 parent_dir = os.path.dirname(norm_path)
                 if parent_dir and not os.path.exists(parent_dir):
                     os.makedirs(parent_dir, exist_ok=True)
-                with open(norm_path, "w", encoding="utf-8") as f:
-                    f.write(new_text)
+                _atomic_write(norm_path, new_text)
                 duration = round(time.time() - start, 4)
                 structured_logging.structured("file_created", path=norm_path, size=len(new_text), duration=duration)
                 return {
@@ -59,9 +73,9 @@ def edit_file(
         with open(norm_path, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
 
+        # old_text 为空表示全量覆盖
         if old_text is None or old_text == "":
-            with open(norm_path, "w", encoding="utf-8") as f:
-                f.write(new_text)
+            _atomic_write(norm_path, new_text)
             duration = round(time.time() - start, 4)
             structured_logging.structured("file_overwritten", path=norm_path, size=len(new_text), duration=duration)
             return {
@@ -89,8 +103,7 @@ def edit_file(
             }
 
         updated_content = content.replace(old_text, new_text, 1)
-        with open(norm_path, "w", encoding="utf-8") as f:
-            f.write(updated_content)
+        _atomic_write(norm_path, updated_content)
 
         duration = round(time.time() - start, 4)
         structured_logging.structured(

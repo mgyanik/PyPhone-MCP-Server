@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from src import logging as structured_logging
+from src.core import logging as structured_logging
+from src.core.pool import map_concurrent
 from src.registry import mcp
 
 
@@ -73,18 +73,10 @@ def _list_single_dir(path: str) -> dict[str, Any]:
     annotations={"readOnlyHint": True},
 )
 def list_dir(paths: list[str] | str = ".") -> dict[str, Any]:
-    if isinstance(paths, str):
-        target_paths = [paths]
-    else:
-        target_paths = list(paths)
-
+    target_paths = [paths] if isinstance(paths, str) else list(paths)
     start_total = time.time()
-    max_workers = min(max(1, len(target_paths)), 8)
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_list_single_dir, p) for p in target_paths]
-        results = [f.result() for f in futures]
-
+    results = map_concurrent(_list_single_dir, target_paths)
     total_duration = round(time.time() - start_total, 4)
     success_count = sum(1 for r in results if r["status"] == "success")
 

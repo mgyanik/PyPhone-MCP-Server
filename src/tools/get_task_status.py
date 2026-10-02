@@ -1,12 +1,12 @@
-"""查询异步任务状态工具。"""
+"""查询异步后台任务状态工具。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from src import logging as structured_logging
+from src.core import logging as structured_logging
+from src.core.task_store import task_store
 from src.registry import mcp
-from src.task_store import task_store
 
 
 @mcp.tool(

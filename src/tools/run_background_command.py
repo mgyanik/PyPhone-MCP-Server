@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
-from src import logging as structured_logging
-from src import policy
+from src.core import logging as structured_logging
+from src.core import policy
+from src.core.task_store import task_store
 from src.registry import mcp
-from src.task_store import task_store
 
 
 @mcp.tool(
@@ -55,5 +54,5 @@ def run_background_command(command: str, cwd: str = ".") -> dict[str, Any]:
     }
 
 
-# 保持向后兼容别名
+# 向后兼容别名
 start_task_for_backend = run_background_command
