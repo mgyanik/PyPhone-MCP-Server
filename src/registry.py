@@ -176,7 +176,6 @@ mcp = MCPFacade(registry)
 
 def load_tools() -> None:
     """Pre-load all tools so they register themselves."""
-    import src.tools.fetch_url  # noqa: F401
     import src.tools.find_process  # noqa: F401
     import src.tools.list_dir  # noqa: F401
     import src.tools.manage_file  # noqa: F401

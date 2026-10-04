@@ -28,7 +28,6 @@ src/
     logging.py              # 结构化日志
   tools/
     edit_file.py            # patch_file (结构化局部补丁与范围覆写)
-    fetch_url.py            # fetch_url (标准库 HTTP/HTTPS 请求)
     find_process.py         # find_process (免 root 排查进程与网络监听端口)
     get_file_info.py        # inspect_file_meta (文件元数据与 SHA-256 校验)
     list_dir.py             # list_directory (并发目录枚举)
@@ -56,7 +55,6 @@ py-mcp.sh                   # 守护进程管理脚本 (start/stop/restart/statu
 | `request_tool` | - | 统一系统命令执行网关。未知命令须经 WebUI 审批，支持 shell=True 管道受控执行，自动记录执行审计日志 |
 | `find_process` | - | 免 root 解析 `/proc` 排查活跃进程与网络端口，替代 lsof/netstat |
 | `take_github` | - | 统一 Git 与 GitHub CLI 操作网关。读操作直接执行，破坏性操作硬拦截，远程写操作须人工确认 |
-| `fetch_url` | - | 基于 Python 标准库发送 HTTP/HTTPS 请求，杜绝 shell curl 引号转义隐患 |
 
 ## 4. 核心安全机制
 

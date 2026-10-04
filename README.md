@@ -85,7 +85,6 @@ chmod +x py-mcp.sh
 | `request_tool` | 统一系统命令执行网关，支持受控管道模式并接入 WebUI 审批 |
 | `find_process` | 免 root 解析 `/proc` 表，探查本地监听端口与对应进程 |
 | `take_github` | 统一 Git / GitHub CLI 接口，具备读写分级与高危操作硬拦截 |
-| `fetch_url` | 标准库 HTTP/HTTPS 请求调用工具 |
 
 ### 许可证
 
