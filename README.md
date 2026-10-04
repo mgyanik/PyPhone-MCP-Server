@@ -84,7 +84,7 @@ chmod +x py-mcp.sh
 | `inspect_file_meta` | 查看文件大小、权限模式、最后修改时间及 SHA-256 哈希 |
 | `request_tool` | 统一系统命令执行网关，支持受控管道模式并接入 WebUI 审批 |
 | `find_process` | 免 root 解析 `/proc` 表，探查本地监听端口与对应进程 |
-| `take_github` | 统一 Git / GitHub CLI 接口，具备读写分级与高危操作硬拦截 |
+| `take_github` | 统一 Git 与 GitHub CLI 接口，完全开放 git 与 gh 母命令与子命令执行权限 |
 
 ### 许可证
 

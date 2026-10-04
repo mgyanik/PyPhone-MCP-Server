@@ -172,3 +172,28 @@ def test_run_command_default_timeout_is_5s():
     assert res["status"] == "timeout"
     assert dur < 3.0
 
+
+def test_take_github_free_commands():
+    from src.tools.take_github import take_github
+
+    # 1. 完整原生命令
+    res = take_github(command="git status")
+    assert res["ok"] is True
+    assert "On branch" in res["output"] or "HEAD" in res["output"]
+
+    # 2. 简写命令自动补齐 git
+    res = take_github(command="status")
+    assert res["ok"] is True
+    assert res["command"] == "git status"
+
+    # 3. 结构化分支列表
+    res = take_github(action="branch_list")
+    assert res["ok"] is True
+    assert res["command"] == "git branch -a"
+
+    # 4. 高级子命令自由执行 (无需在旧白名单内)
+    res = take_github(command="git rev-parse --is-inside-work-tree")
+    assert res["ok"] is True
+    assert "true" in res["output"].lower()
+
+

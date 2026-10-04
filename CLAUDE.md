@@ -54,13 +54,13 @@ py-mcp.sh                   # 守护进程管理脚本 (start/stop/restart/statu
 | `move_or_delete_file` | `manage_file` | 安全移动、复制、删除文件与目录，内置系统根目录防误删与沙箱检查 |
 | `request_tool` | - | 统一系统命令执行网关。未知命令须经 WebUI 审批，支持 shell=True 管道受控执行，自动记录执行审计日志 |
 | `find_process` | - | 免 root 解析 `/proc` 排查活跃进程与网络端口，替代 lsof/netstat |
-| `take_github` | - | 统一 Git 与 GitHub CLI 操作网关。读操作直接执行，破坏性操作硬拦截，远程写操作须人工确认 |
+| `take_github` | - | 统一 Git 与 GitHub CLI (gh) 操作网关。完全开放 git 与 gh 母命令与全部子命令权限，支持传入 command 完整命令行或结构化参数 |
 
 ## 4. 核心安全机制
 
 - 路径沙箱：所有文件读写必须通过 `resolve_safe_path` 严格约束在 `TERMUX_HOME`（`/data/data/com.termux/files/home`）内，阻断 `..` 相对越界与非法绝对路径访问。
 - 命令审批：系统命令统一收敛至 `request_tool`。未知命令先提交待审批，由管理员在 WebUI（端口 8080）显式批准后方可执行；规则支持原子持久化与自动去重；执行后自动追加执行审计日志。
-- 高危操作防护：Git 破坏性操作（如 force-push、hard-reset 等）一律硬拦截阻断；远程写操作由模型在会话中直接向用户提出并获得明确确认后执行。
+- Git/GitHub 执行控制：完全开放 git 与 gh 工具权限，彻底免除日常开发在 WebUI 堆积命令审批的负担。母命令严格限定为 git 与 gh 并采用参数列表直接执行，杜绝 shell 逃逸注入；远程写操作由模型在会话中直接向用户提出并获得明确确认后执行。
 
 ## 5. 开发者与 Agent 工作规范
 
