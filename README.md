@@ -16,7 +16,7 @@ PyPhone-MCP-Server 是专为 Android / Termux 环境构建的轻量级、高性�
 - **独立 WebUI 命令审批**：高危或未知 Shell 指令需通过内置 WebUI（端口 8080）显式批准，支持前缀通配与精确白/黑名单机制。
 - **多层安全沙箱保护**：
   - 路径严格限制在 Termux 沙箱（`/data/data/com.termux/files/home`）内，阻断 `..` 相对越界与非法绝对路径访问。
-  - 远程写操作（如 Git Push）基于参数特征 SHA-256 哈希生成一次性 Token，防范越权与重放攻击。
+  - 严格拦截破坏性 Git 操作（如 force-push、hard-reset 等），远程写操作受客户端与人工交互确认约束。
 - **专职工程工具集**：提供结构化文件修改（行范围/全量覆写/代码大纲）、代码全文搜索、免 root 进程/端口探查及 GitHub 操作工具。
 
 ### 运行环境
@@ -84,9 +84,8 @@ chmod +x py-mcp.sh
 | `inspect_file_meta` | 查看文件大小、权限模式、最后修改时间及 SHA-256 哈希 |
 | `request_tool` | 统一系统命令执行网关，支持受控管道模式并接入 WebUI 审批 |
 | `find_process` | 免 root 解析 `/proc` 表，探查本地监听端口与对应进程 |
-| `take_github` | 统一 Git / GitHub CLI 接口，集成读写分级与 Token 鉴权 |
+| `take_github` | 统一 Git / GitHub CLI 接口，具备读写分级与高危操作硬拦截 |
 | `fetch_url` | 标准库 HTTP/HTTPS 请求调用工具 |
-| `ask_user` | 远程高危写操作前置授权申请工具 |
 
 ### 许可证
 
@@ -106,7 +105,7 @@ PyPhone-MCP-Server is a lightweight, high-performance Model Context Protocol (MC
 - **Independent WebUI Authorization**: Commands require approval via the embedded WebUI (port 8080), featuring whitelist and blacklist policies.
 - **Multi-layer Security Sandbox**:
   - Confined strictly to the Termux root path (`/data/data/com.termux/files/home`), blocking relative path traversal (`..`) and absolute path escape.
-  - Remote write operations (e.g., Git Push) require one-time SHA-256 parameter-bound authorization tokens.
+  - Strictly blocks destructive Git operations (e.g., force-push, hard-reset) while remote write actions are bounded by user confirmation.
 - **Comprehensive Toolset**: Includes range-based file editors, codebase search, rootless process discovery, and controlled GitHub operations.
 
 ### Prerequisites

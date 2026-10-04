@@ -49,12 +49,18 @@ HTML = """<!DOCTYPE html>
         
         .empty-state { text-align: center; color: var(--gray); padding: 40px 20px; font-size: 15px; }
         .hidden { display: none; }
+        .header-actions { display: flex; align-items: center; gap: 8px; }
+        .btn-refresh { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: 0.15s; }
+        .btn-refresh:active { background: var(--border); transform: scale(0.96); }
     </style>
 </head>
 <body>
     <div class="header">
         <h2>🛡️ MCP 审批台</h2>
-        <span class="sync-time" id="last-sync">--:--</span>
+        <div class="header-actions">
+            <button class="btn-refresh" onclick="fetchData()">🔄 刷新</button>
+            <span class="sync-time" id="last-sync">--:--</span>
+        </div>
     </div>
 
     <div class="nav">
@@ -99,6 +105,16 @@ HTML = """<!DOCTYPE html>
                 fetchData();
             } catch(e) { alert("操作失败: " + e); }
         }
+        function formatCommand(tokens) {
+            if (!tokens || !Array.isArray(tokens)) return '';
+            return tokens.map(t => {
+                if (typeof t !== 'string') return String(t);
+                if (t.includes(' ') || t.includes('"') || t.includes("'") || t === '') {
+                    return JSON.stringify(t);
+                }
+                return t;
+            }).join(' ');
+        }
 
         function buildTokens(command, mode) {
             if (mode === 'exact') return command;
@@ -128,15 +144,15 @@ HTML = """<!DOCTYPE html>
                 pDiv.innerHTML = currentData.pending.map(p => `
                     <div class="card">
                         <span class="badge pending">待审批</span>
-                        <div class="code">${p.command.join(' ')}</div>
+                        <div class="code">${formatCommand(p.command)}</div>
                         <div class="meta-text"><strong>工作目录:</strong> ${p.cwd}</div>
                         <div class="meta-text"><strong>申请原因:</strong> ${p.reason}</div>
                         
                         <div class="controls">
                             <select id="mode-${p.request_id}">
                                 <option value="exact">🎯 精确匹配 (仅允许此完整命令)</option>
-                                <option value="prefix_1">📁 母命令通配 (允许 ${p.command[0]} 的所有参数)</option>
-                                ${p.command.length > 1 ? `<option value="prefix_2">📄 子命令通配 (允许 ${p.command[0]} ${p.command[1]} 的参数)</option>` : ''}
+                                <option value="prefix_1">📁 母命令通配 (允许 ${formatCommand(p.command.slice(0, 1))} 的所有参数)</option>
+                                ${p.command.length > 1 ? `<option value="prefix_2">📄 子命令通配 (允许 ${formatCommand(p.command.slice(0, 2))} 的参数)</option>` : ''}
                             </select>
                             <div class="btn-group">
                                 <button class="action-btn btn-success" onclick="handleProcess('${p.request_id}', true)">✅ 批准</button>
@@ -160,7 +176,7 @@ HTML = """<!DOCTYPE html>
                             <span class="badge ${r.match}">${r.match === 'exact' ? '🎯 精确匹配' : '📁 前缀通配'}</span>
                             <button class="action-btn btn-outline" style="padding: 4px 12px; font-size: 13px; width: auto;" onclick="deleteRule('${type}', ${i})">删除</button>
                         </div>
-                        <div class="code" style="margin-top:0;">${r.tokens.join(' ')} ${r.match === 'prefix' ? '...' : ''}</div>
+                        <div class="code" style="margin-top:0;">${formatCommand(r.tokens)} ${r.match === 'prefix' ? '...' : ''}</div>
                         <div class="meta-text" style="font-size: 12px;">时间: ${r.approved_at || r.blocked_at || '未知'}</div>
                     </div>
                 `).join('');
@@ -179,14 +195,13 @@ HTML = """<!DOCTYPE html>
                             <span class="badge ${l.result === 'success' ? 'prefix' : 'danger'}">${l.result === 'success' ? '✅ 成功' : '❌ 失败'}</span>
                             <span style="font-size: 12px; color: var(--gray);">${l.timestamp.substring(11, 16)}</span>
                         </div>
-                        <div class="code" style="margin-top:0; margin-bottom: 8px; font-size: 13px;">${l.command.join(' ')}</div>
+                        <div class="code" style="margin-top:0; margin-bottom: 8px; font-size: 13px;">${formatCommand(l.command)}</div>
                         <div class="meta-text" style="font-size: 12px;">退出码: ${l.exit_code} | 命中规则: ${l.rule ? l.rule.match : '无'}</div>
                     </div>
                 `).join('');
             }
         }
 
-        setInterval(fetchData, 2000);
         fetchData();
     </script>
 </body>
@@ -239,7 +254,17 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if is_appr: rule["approved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 else: rule["blocked_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()); rule["reason"] = "user_rejected"
                     
-                rules.setdefault("entries", []).append(rule)
+                entries = rules.setdefault("entries", [])
+                target_tokens = rule.get("tokens")
+                target_match = rule.get("match")
+                updated = False
+                for existing in entries:
+                    if existing.get("tokens") == target_tokens and existing.get("match") == target_match:
+                        existing.update(rule)
+                        updated = True
+                        break
+                if not updated:
+                    entries.append(rule)
                 _atomic_write(t_file, rules)
                 
             elif self.path == '/api/delete_rule':

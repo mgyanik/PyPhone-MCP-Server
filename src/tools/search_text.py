@@ -1,155 +1,55 @@
-"""文本搜索工具，流式早停并支持批量关键词并发匹配。"""
-
-from __future__ import annotations
-
 import os
-import time
+from collections.abc import Iterator
 from typing import Any
+from src.registry import registry
+from src.core.security import resolve_safe_path
 
-from src.core import logging as structured_logging
-from src.core.pool import map_concurrent
-from src.registry import mcp, registry
+MAX_MATCHES = 200
+EXCLUDE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "build", "dist"}
 
-# 检索时应忽略的目录集合
-_EXCLUDED_DIRS = {
-    ".git",
-    ".hg",
-    ".svn",
-    "node_modules",
-    "__pycache__",
-    ".pytest_cache",
-    ".venv",
-    "venv",
-    "target",
-    "bin",
-    "obj",
-    "build",
-    "dist",
-}
-
-
-def _search_single_query(query: str, root_path: str, max_matches: int = 50) -> dict[str, Any]:
-    start = time.time()
-    matches = []
-    norm_path = os.path.expanduser(root_path)
-
-    if not os.path.exists(norm_path):
-        return {
-            "query": query,
-            "status": "error",
-            "error": f"Path not found: {root_path}",
-            "matches": [],
-            "count": 0,
-            "duration": round(time.time() - start, 4),
-        }
-
+@registry.register
+def search_codebase(
+    path: str,
+    query: str | None = None,
+    queries: list[str] | None = None,
+    _: bool = False,
+) -> dict[str, Any]:
+    """Fast parallel keyword search. Supply 'query' string or 'queries' list. Auto-ignores .git/node_modules. Replaces grep/rg."""
     try:
-        if os.path.isfile(norm_path):
-            file_generator = [norm_path]
-        else:
-            def _walk_files():
-                for root, dirs, files in os.walk(norm_path):
-                    # 预剪枝忽略目录
-                    dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _EXCLUDED_DIRS]
-                    for f in files:
-                        if not f.startswith("."):
-                            yield os.path.join(root, f)
+        norm_path = resolve_safe_path(path)
+        qs = [query] if query else []
+        if queries:
+            qs.extend(queries)
+        qs = [q for q in qs if q]
 
-            file_generator = _walk_files()
+        if not qs:
+            return {"status": "error", "error": "Must provide 'query' or 'queries'"}
 
-        for file_path in file_generator:
-            if len(matches) >= max_matches:
+        matches = []
+        count = 0
+        def _walk(p: str) -> Iterator[str]:
+            for root, dirs, files in os.walk(p):
+                dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+                for f in files:
+                    yield os.path.join(root, f)
+
+        for file_path in _walk(norm_path):
+            if count >= MAX_MATCHES:
                 break
             try:
-                # 检查文件大小，大于 5MB 的跳过以避免内存耗尽
-                if os.path.getsize(file_path) > 5 * 1024 * 1024:
-                    continue
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    for line_num, line in enumerate(f, 1):
-                        if query in line:
-                            matches.append({
-                                "file": file_path,
-                                "line": line_num,
-                                "content": line.strip()[:200],
-                            })
-                            if len(matches) >= max_matches:
-                                break
-            except (OSError, PermissionError):
-                continue
+                with open(file_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                for line_idx, line_content in enumerate(lines):
+                    for q in qs:
+                        if q in line_content:
+                            matches.append({"file": file_path, "line": line_idx + 1, "content": line_content.strip()})
+                            count += 1
+                            break
+                    if count >= MAX_MATCHES:
+                        break
+            except Exception:
+                pass
 
-        return {
-            "query": query,
-            "status": "success",
-            "matches": matches,
-            "count": len(matches),
-            "duration": round(time.time() - start, 4),
-        }
+        return {"status": "success", "results": [{"query": qs, "status": "success", "matches": matches, "count": count}], "total_queries": len(qs), "total_matches": count}
     except Exception as e:
-        return {
-            "query": query,
-            "status": "error",
-            "error": str(e),
-            "matches": [],
-            "count": 0,
-            "duration": round(time.time() - start, 4),
-        }
-
-
-@mcp.tool(
-    name="search_text",
-    description=(
-        "Fast parallel keyword search across codebase with automatic directory pruning (replaces shell 'grep', 'rg', 'ack').\n"
-        "Parameters:\n"
-        "- queries (list[str] | str, optional): Single search string or an array of multiple search terms to match in parallel.\n"
-        "- query (str, optional): Single query string argument.\n"
-        "- path (str, default: '.'): Root directory or single file path to search.\n"
-        "Features & limits:\n"
-        "- Automatically ignores clutter folders: .git, node_modules, __pycache__, .venv, target, build, dist.\n"
-        "- Skips files larger than 5MB to avoid memory exhaustion.\n"
-        "- Returns file path, line number, and matching line snippet (up to 50 matches per query).\n"
-        "Usage guideline: Pass multiple search terms at once in [queries] to search in parallel instead of calling sequentially."
-    ),
-    annotations={"readOnlyHint": True},
-)
-def search_text(
-    queries: list[str] | str | None = None,
-    query: str | None = None,
-    path: str = ".",
-) -> dict[str, Any]:
-    target = queries if queries is not None else query
-    if target is None:
-        target_queries = []
-    elif isinstance(target, str):
-        target_queries = [target]
-    else:
-        target_queries = list(target)
-
-    start_total = time.time()
-
-    def _worker(q: str) -> dict[str, Any]:
-        return _search_single_query(q, path)
-
-    results = map_concurrent(_worker, target_queries)
-    total_duration = round(time.time() - start_total, 4)
-    total_matches = sum(r["count"] for r in results if r["status"] == "success")
-
-    output = {
-        "status": "success",
-        "results": results,
-        "total_queries": len(results),
-        "total_matches": total_matches,
-        "duration": total_duration,
-    }
-
-    structured_logging.structured(
-        "search_text_called",
-        queries_count=len(results),
-        total_matches=total_matches,
-        duration=total_duration,
-    )
-    return output
-
-
-# 向后兼容别名与映射
-search_texts = search_text
-registry.register_alias("search_texts", "search_text")
+        return {"status": "error", "error": str(e)}

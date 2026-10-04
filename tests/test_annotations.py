@@ -30,7 +30,7 @@ def test_destructive_tools():
     destructive = {
         'run_command',
         'run_background_command',
-        'edit_file',
+        'edit__file',
         'manage_file',
         'cancel_task',
         'kill_process',
@@ -43,8 +43,7 @@ def test_destructive_tools():
 def test_run_command_strong_reminder():
     tool = registry.get_tool('run_command')
     assert tool is not None
-    assert '仅供用于工具做不到的时候使用' in tool.description
-    assert 'CRITICAL' in tool.description
+    assert 'ONLY use when dedicated tools cannot fulfill' in tool.description
 
 def test_tool_descriptions_are_detailed_and_actionable():
     for t in registry.list_tools():

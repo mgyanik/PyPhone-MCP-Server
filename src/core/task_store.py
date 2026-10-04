@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from src.config import DEFAULT_ENV, SHELL_BIN, TASK_COMPLETED_TTL, TERMUX_HOME
+from src.config import DEFAULT_ENV, SHELL_BIN, TASK_COMPLETED_TTL, TERMUX_HOME, MAX_OUTPUT_BYTES
 from src.core import logging as structured_logging
 from src.core import policy
 
@@ -162,6 +162,16 @@ class TaskStore:
                     output += "\n---stderr---\n" + stderr_data.strip()
                 else:
                     output = stderr_data.strip()
+            
+            # Truncate output
+            raw_bytes = output.encode("utf-8", errors="replace")
+            if len(raw_bytes) > MAX_OUTPUT_BYTES:
+                head_bytes = raw_bytes[: MAX_OUTPUT_BYTES // 2]
+                tail_bytes = raw_bytes[-MAX_OUTPUT_BYTES // 2 :]
+                head_str = head_bytes.decode("utf-8", errors="ignore")
+                tail_str = tail_bytes.decode("utf-8", errors="ignore")
+                omitted_bytes = len(raw_bytes) - len(head_bytes) - len(tail_bytes)
+                output = f"{head_str}\n\n... [output truncated: omitted {omitted_bytes} bytes] ...\n\n{tail_str}"
 
             with self._lock:
                 if task.status != "canceled":

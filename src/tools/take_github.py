@@ -2,7 +2,6 @@ import subprocess
 import os
 from typing import Any
 from src.registry import registry
-from src.core.token_store import validate_and_consume
 from src.core.security import resolve_safe_path
 
 READ_ACTIONS = {"status", "diff", "log", "show", "blame", "branch_list", "remote_list", "tag_list", "pr_view", "pr_list", "issue_view", "issue_list", "release_list", "fetch", "pull"}
@@ -13,7 +12,6 @@ DESTRUCTIVE_ACTIONS = {"reset_hard", "rebase", "branch_delete", "push_force", "c
 @registry.register
 def take_github(
     action: str, 
-    ask_token: str = None,
     paths: list[str] | None = None,
     message: str = "",
     remote: str = "origin",
@@ -24,18 +22,9 @@ def take_github(
     n: int = 5,
     cwd: str = "."
 ) -> dict[str, Any]:
-    """Unified git and gh tool. Read/Local Write execute directly. Remote Write requires ASK token. Destructive blocked."""
+    """Unified git and gh tool. Read/Write execute directly. Destructive operations are strictly blocked."""
     if action in DESTRUCTIVE_ACTIONS:
         return {"ok": False, "error": "destructive_operation_blocked", "message": "Destructive operations are strictly prohibited."}
-
-    expected_context = f'remote={remote},branch={branch},title={title},num={number}'
-    params_for_hash = {'context': expected_context}
-
-    if action in REMOTE_WRITE_ACTIONS:
-        if not ask_token:
-            return {'ok': False, 'error': 'remote_write_requires_ask', 'message': 'Action ' + action + ' requires user approval via ASK tool first. Pass context=' + expected_context, 'required_context': expected_context}
-        if not (validate_and_consume(ask_token, action, params_for_hash) or validate_and_consume(ask_token, action, {'context': ''})):
-            return {'ok': False, 'error': 'invalid_ask_token', 'message': 'Token is invalid, expired, or parameters do not match.'}
 
     cmd = []
     safe_cwd = resolve_safe_path(cwd)

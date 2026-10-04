@@ -15,21 +15,9 @@ from src.registry import mcp
 
 
 @mcp.tool(
-    name="fetch_url",
     description=(
-        "Send an HTTP or HTTPS request using Python's standard library (replaces shell 'curl' to eliminate shell quoting and escaping issues).\n"
-        "Parameters:\n"
-        "- url (str): Fully-qualified URL (e.g. 'http://127.0.0.1:8000/api' or 'https://api.github.com/...').\n"
-        "- method (str, default: 'GET'): HTTP verb ('GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD').\n"
-        "- headers (dict, optional): Custom HTTP headers (e.g. {'Content-Type': 'application/json', 'Authorization': 'Bearer ...'}).\n"
-        "- body (str, optional): String payload for POST/PUT/PATCH requests (pass a JSON-serialized string when sending JSON).\n"
-        "- timeout (float, default: 10.0, max: 30.0): Request timeout in seconds.\n"
-        "Returns:\n"
-        "- status_code: HTTP response status code (e.g. 200, 404, 500).\n"
-        "- headers: Normalized dictionary of response headers.\n"
-        "- text: String response body (automatically truncated if exceeding 50KB).\n"
-        "- json: Parsed JSON object if response Content-Type is JSON or text is valid JSON.\n"
-        "Usage guideline: Use this for querying local APIs, validating web servers, or communicating with external web services without invoking curl in shell."
+        "Send HTTP or HTTPS requests (GET, POST, PUT, DELETE, etc.) using Python standard library. "
+        "Replaces curl and wget to eliminate shell escaping issues."
     ),
     annotations={"destructiveHint": False},
 )

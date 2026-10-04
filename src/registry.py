@@ -185,7 +185,6 @@ def load_tools() -> None:
     import src.tools.get_file_info  # noqa: F401
     import src.tools.edit_file  # noqa: F401
     import src.tools.take_github  # noqa: F401
-    import src.tools.ask  # noqa: F401
     import src.tools.request_tool  # noqa: F401
     registry.register_alias("edit__file", "patch_file")
     registry.register_alias("read_file", "read_file_or_outline")

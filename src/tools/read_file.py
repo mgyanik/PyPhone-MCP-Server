@@ -1,107 +1,51 @@
-"""批量与单文件高并发读取工具。"""
-
-from __future__ import annotations
-
 import os
-import time
 from typing import Any
+from src.registry import registry
+from src.core.security import resolve_safe_path
+import re
 
-from src.core import logging as structured_logging
-from src.core.pool import map_concurrent
-from src.registry import mcp, registry
+def extract_outline(content: str) -> str:
+    lines = content.splitlines()
+    outline = []
+    for i, line in enumerate(lines, 1):
+        if re.match(r'^\s*(def|class|interface|type)\s+', line) or re.match(r'^\s*(export\s+)?(function|class|interface|type|const\s+\w+\s*=)\s+', line):
+            outline.append(f"{i}: {line}")
+    return "\n".join(outline) if outline else "No structural outline found (may not be a code file)."
 
-
-def _read_single_file(path: str) -> dict[str, Any]:
-    start = time.time()
-    try:
-        norm_path = os.path.expanduser(path)
-        if not os.path.exists(norm_path):
-            return {
-                "path": path,
-                "status": "error",
-                "error": "File not found",
-                "content": None,
-                "duration": round(time.time() - start, 4),
-            }
-        if os.path.isdir(norm_path):
-            return {
-                "path": path,
-                "status": "error",
-                "error": "Target is a directory",
-                "content": None,
-                "duration": round(time.time() - start, 4),
-            }
-        with open(norm_path, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
-        return {
-            "path": path,
-            "status": "success",
-            "content": content,
-            "size": len(content),
-            "duration": round(time.time() - start, 4),
-        }
-    except Exception as e:
-        return {
-            "path": path,
-            "status": "error",
-            "error": str(e),
-            "content": None,
-            "duration": round(time.time() - start, 4),
-        }
-
-
-@mcp.tool(
-    name="read_file",
-    description=(
-        "Read file contents using high-concurrency worker pool (replaces shell 'cat').\n"
-        "Parameters:\n"
-        "- paths (list[str] | str, optional): Single file path or a list of file paths.\n"
-        "- path (str, optional): Alternative single file path argument.\n"
-        "Usage guideline:\n"
-        "1. PREFER passing multiple file paths in a single array [paths] to read them concurrently in parallel, which minimizes network roundtrips and token latency.\n"
-        "2. For large files (> 300 lines) or inspecting specific code blocks/logs, ALWAYS prefer 'read_file_lines' instead of reading full content into context."
-    ),
-    annotations={"readOnlyHint": True},
-)
-def read_file(
-    paths: list[str] | str | None = None,
-    path: str | None = None,
+@registry.register
+def read_file_or_outline(
+    path: str,
+    start_line: int | None = None,
+    end_line: int | None = None,
+    outline: bool = False,
+    force_full: bool = False,
 ) -> dict[str, Any]:
-    target = paths if paths is not None else path
-    if target is None:
-        target_paths = ["."]
-    elif isinstance(target, str):
-        target_paths = [target]
-    else:
-        target_paths = list(target)
+    """Advanced file reading tool. CRITICAL PRINCIPLES: Finding a function or checking config? Use outline=true or read a specific snippet (start_line/end_line). Understanding overall architecture or the file is < 2k lines? Use normal full read. If a file is > 500 lines and no specific parameters are provided, it will return an outline and prompt you to specify range or set force_full=true."""
+    try:
+        norm_path = resolve_safe_path(path)
+        if not os.path.exists(norm_path):
+            return {"status": "error", "error": "File not found"}
+        if not os.path.isfile(norm_path):
+            return {"status": "error", "error": "Path is not a file"}
 
-    start_total = time.time()
+        with open(norm_path, "r", encoding="utf-8") as f:
+            content = f.read()
 
-    # 使用全局长驻线程池并发读取
-    results = map_concurrent(_read_single_file, target_paths)
-    total_duration = round(time.time() - start_total, 4)
-    success_count = sum(1 for r in results if r["status"] == "success")
+        lines = content.splitlines()
+        total_lines = len(lines)
 
-    output = {
-        "status": "success" if success_count == len(results) else "partial_success",
-        "results": results,
-        "total_files": len(results),
-        "duration": total_duration,
-    }
+        if outline:
+            return {"status": "success", "path": norm_path, "total_lines": total_lines, "content": extract_outline(content), "is_outline": True}
 
-    structured_logging.structured(
-        "read_file_batch",
-        total_files=len(results),
-        success_count=success_count,
-        duration=total_duration,
-    )
-    return output
+        if start_line is not None or end_line is not None:
+            sl = max(0, (start_line or 1) - 1)
+            el = min(total_lines, end_line or total_lines)
+            chunk = "\n".join(lines[sl:el])
+            return {"status": "success", "path": norm_path, "start_line": sl + 1, "end_line": el, "total_lines": total_lines, "content": chunk}
 
+        if total_lines > 500 and not force_full:
+            return {"status": "error", "error": f"File {os.path.basename(norm_path)} is {total_lines} lines long. Exceeds recommended single-read limit. Please use `outline=true`, specify `start_line` and `end_line`, or pass `force_full=true`."}
 
-# 向后兼容别名与注册映射
-read_files = read_file
-get_files = read_file
-get_file = read_file
-registry.register_alias("read_files", "read_file")
-registry.register_alias("get_files", "read_file")
-registry.register_alias("get_file", "read_file")
+        return {"status": "success", "path": norm_path, "total_lines": total_lines, "content": content, "is_full_read": True}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}

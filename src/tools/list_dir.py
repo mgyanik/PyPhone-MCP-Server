@@ -1,109 +1,73 @@
-"""目录列举工具，支持传入单个目录或并发列出多个目录。"""
-
-from __future__ import annotations
-
 import os
-import time
+import concurrent.futures
 from typing import Any
+from src.registry import registry
+from src.core.security import resolve_safe_path
 
-from src.core import logging as structured_logging
-from src.core.pool import map_concurrent
-from src.registry import mcp
+MAX_RESULTS = 1000
 
+@registry.register
+def list_directory(paths: list[str] | str = ".", _: bool = False) -> dict[str, Any]:
+    """Fast parallel directory lister (results limited to 1000 to save tokens). If a dir is huge or you need specific files, ALWAYS use search_codebase instead of list_directory."""
+    try:
+        paths_list = [paths] if isinstance(paths, str) else paths
+        if not paths_list:
+            paths_list = ["."]
+
+        # Sanitize all paths
+        paths_list = [resolve_safe_path(p) for p in paths_list]
+
+        results = []
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future_to_path = {
+                executor.submit(_list_single_dir, p): p for p in paths_list
+            }
+            for future in concurrent.futures.as_completed(future_to_path):
+                results.append(future.result())
+
+        return {
+            "status": "success",
+            "results": results,
+            "total_dirs": len(paths_list)
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 def _list_single_dir(path: str) -> dict[str, Any]:
-    start = time.time()
     try:
-        norm_path = os.path.expanduser(path)
-        if not os.path.exists(norm_path):
-            return {
-                "path": path,
-                "status": "error",
-                "error": "Directory not found",
-                "entries": [],
-                "duration": round(time.time() - start, 4),
-            }
-        if not os.path.isdir(norm_path):
-            return {
-                "path": path,
-                "status": "error",
-                "error": "Target is not a directory",
-                "entries": [],
-                "duration": round(time.time() - start, 4),
-            }
+        if not os.path.exists(path):
+            return {"path": path, "status": "error", "error": "Not found"}
+
+        if not os.path.isdir(path):
+            return {"path": path, "status": "error", "error": "Not a directory"}
 
         entries = []
-        with os.scandir(norm_path) as it:
+        count = 0
+        has_more = False
+
+        with os.scandir(path) as it:
             for entry in it:
+                if count >= MAX_RESULTS:
+                    has_more = True
+                    break
+                
                 try:
                     stat = entry.stat()
                     entries.append({
                         "name": entry.name,
                         "type": "directory" if entry.is_dir() else "file",
-                        "size": stat.st_size,
+                        "size": stat.st_size
                     })
-                except Exception:
-                    entries.append({
-                        "name": entry.name,
-                        "type": "directory" if entry.is_dir() else "file",
-                        "size": 0,
-                    })
+                    count += 1
+                except OSError:
+                    pass
 
-        entries.sort(key=lambda x: (x["type"] != "directory", x["name"].lower()))
         return {
             "path": path,
             "status": "success",
             "entries": entries,
-            "count": len(entries),
-            "duration": round(time.time() - start, 4),
+            "count": count,
+            "has_more": has_more
         }
     except Exception as e:
-        return {
-            "path": path,
-            "status": "error",
-            "error": str(e),
-            "entries": [],
-            "duration": round(time.time() - start, 4),
-        }
-
-
-@mcp.tool(
-    name="list_dir",
-    description=(
-        "Explore directory contents sorted intuitively (directories first, then files with sizes) (replaces shell 'ls', 'dir').\n"
-        "Parameters:\n"
-        "- paths (list[str] | str, default: '.'): Single directory path or an array of directory paths.\n"
-        "Returns:\n"
-        "- entries: List of items with name, type ('directory' | 'file'), and size in bytes.\n"
-        "Usage guideline:\n"
-        "1. Pass an array of paths in [paths] to explore multiple directories concurrently.\n"
-        "2. Results are pre-sorted with folders at top for fast structure comprehension."
-    ),
-    annotations={"readOnlyHint": True},
-)
-def list_dir(paths: list[str] | str = ".") -> dict[str, Any]:
-    target_paths = [paths] if isinstance(paths, str) else list(paths)
-    start_total = time.time()
-
-    results = map_concurrent(_list_single_dir, target_paths)
-    total_duration = round(time.time() - start_total, 4)
-    success_count = sum(1 for r in results if r["status"] == "success")
-
-    output = {
-        "status": "success" if success_count == len(results) else "partial_success",
-        "results": results,
-        "total_dirs": len(results),
-        "duration": total_duration,
-    }
-
-    structured_logging.structured(
-        "batch_list_dir",
-        total_dirs=len(results),
-        success_count=success_count,
-        duration=total_duration,
-    )
-    return output
-
-
-def list_dirs(paths: list[str]) -> dict[str, Any]:
-    return list_dir(paths)
+        return {"path": path, "status": "error", "error": str(e)}

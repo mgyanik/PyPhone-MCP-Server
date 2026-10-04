@@ -109,7 +109,7 @@ def test_tools_list_all_renamed_tools():
     expected = {
         "read_file",
         "read_file_lines",
-        "edit_file",
+        "edit__file",
         "manage_file",
         "get_file_info",
         "list_dir",

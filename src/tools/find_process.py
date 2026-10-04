@@ -66,18 +66,7 @@ def _find_pids_by_socket_inodes(target_inodes: set[str]) -> set[int]:
 
 
 @mcp.tool(
-    name="find_process",
-    description=(
-        "Find running processes by listening network port or command name keyword (replaces shell 'lsof -i', 'netstat', and 'ps aux | grep').\n"
-        "Parameters:\n"
-        "- port (int, optional): Port number to check (e.g. 3000, 8080) to discover which process is occupying it.\n"
-        "- name (str, optional): Case-insensitive keyword to match against process name or full cmdline arguments (e.g. 'node', 'python', 'server').\n"
-        "Returns a list of matching processes with:\n"
-        "- pid: Integer process ID.\n"
-        "- name: Process executable name.\n"
-        "- cmdline: Full command line string.\n"
-        "Usage guideline: ALWAYS use this tool before starting network services to check for port conflicts, or when verifying whether a background service is running."
-    ),
+    description=("Discover active processes safely by name or port. Bypasses lsof/netstat permission errors in Android/Termux. Do NOT use run_short_shell_command with ps aux or lsof."),
     annotations={"readOnlyHint": True},
 )
 def find_process(port: int | None = None, name: str | None = None) -> dict[str, Any]:
@@ -137,6 +126,8 @@ def find_process(port: int | None = None, name: str | None = None) -> dict[str, 
             "name": proc_name,
             "cmdline": display_cmd,
         })
+        if len(matched_processes) >= 300:
+            break
 
     matched_processes.sort(key=lambda x: x["pid"])
     duration = round(time.time() - start, 4)

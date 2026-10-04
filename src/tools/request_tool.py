@@ -4,7 +4,7 @@ import subprocess
 from typing import Any
 from src.registry import registry
 from src.config import DEFAULT_ENV, SHELL_BIN
-from src.core.auth_store import evaluate_command, add_pending_request
+from src.core.auth_store import evaluate_command, add_pending_request, log_execution
 from src.core.security import resolve_safe_path
 
 @registry.register
@@ -52,6 +52,7 @@ def request_tool(
             # Execute
             safe_cwd = resolve_safe_path(cwd)
             res = subprocess.run(cmd_list, cwd=safe_cwd, env=DEFAULT_ENV, capture_output=True, text=True, timeout=60)
+            log_execution(cmd_list, rule, res.returncode, "success" if res.returncode == 0 else "failed")
             out = (res.stdout + "\n" + res.stderr).strip()
             if len(out) > 3000: out = out[:3000] + "...[truncated]"
             return {"result": f"Executed (Code {res.returncode}):\n{out}"}

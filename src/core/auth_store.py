@@ -2,7 +2,7 @@ import os
 import json
 import time
 import uuid
-from typing import Literal
+from typing import Literal, Any
 from src.config import TERMUX_HOME
 
 AUTH_DIR = os.path.join(TERMUX_HOME, ".mcp_auth")
