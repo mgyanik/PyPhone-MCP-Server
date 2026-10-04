@@ -17,3 +17,7 @@ __pycache__/
 .venv/
 venv/
 session.txt
+
+# Atomic file edit temp files
+*.tmp
+*.tmp.*

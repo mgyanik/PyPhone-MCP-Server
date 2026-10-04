@@ -1,238 +1,108 @@
-"""精准编辑或创建文件工具，支持行号范围替换、全量覆写或精准匹配。"""
-
-from __future__ import annotations
-
 import os
-import tempfile
-import time
+import difflib
+import re
 from typing import Any
+from src.registry import registry
+from src.core.security import resolve_safe_path
 
-from src.core import logging as structured_logging
-from src.registry import mcp
+def _find_symbol_block(lines: list[str], symbol: str) -> tuple[int, int] | None:
+    pattern = re.compile(r'^\s*(def|class|function|const|let|var|interface|type)\s+' + re.escape(symbol) + r'\b')
+    start_idx = -1
+    indent = ""
+    for i, line in enumerate(lines):
+        if pattern.search(line):
+            start_idx = i
+            indent_match = re.match(r'^(\s*)', line)
+            indent = indent_match.group(1) if indent_match else ""
+            break
+    if start_idx == -1: return None
+    end_idx = start_idx
+    for i in range(start_idx + 1, len(lines)):
+        line = lines[i]
+        if not line.strip() or line.strip().startswith(('#', '//')):
+            end_idx = i
+            continue
+        curr_indent_match = re.match(r'^(\s*)', line)
+        curr_indent = curr_indent_match.group(1) if curr_indent_match else ""
+        if len(curr_indent) <= len(indent): break
+        end_idx = i
+    return (start_idx + 1, end_idx + 1)
 
-
-def _atomic_write(file_path: str, content: str) -> None:
-    """原子化写入文件，避免并发读取时出现中间不完整状态。"""
-    dir_name = os.path.dirname(file_path) or "."
-    fd, tmp_path = tempfile.mkstemp(dir=dir_name, prefix=".tmp_mcp_")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
-        os.replace(tmp_path, file_path)
-    except Exception:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        raise
-
-
-@mcp.tool(
-    name="edit_file",
-    description=(
-        "Edit files with high efficiency by line range replacement, whole-file write, or exact text match (replaces shell 'sed -i', 'echo >', 'tee').\n"
-        "Parameters:\n"
-        "- path (str): Target file path.\n"
-        "- new_text (str): Replacement text or full file content.\n"
-        "- start_line (int, optional): 1-based starting line number (inclusive) for line-range replacement.\n"
-        "- end_line (int, optional): 1-based ending line number (inclusive). Defaults to start_line (single line replacement). If end_line < start_line, acts as line insertion before start_line.\n"
-        "- create_if_missing (bool, default: False): Set True when creating a new file (automatically creates missing parent directories).\n"
-        "- old_text (str, optional): Legacy fallback for unique exact string replacement when line numbers are omitted.\n"
-        "Modes of operation:\n"
-        "1. Line Range Replacement (RECOMMENDED): Specify start_line (and optionally end_line) with new_text. Pairs perfectly with read_file_lines.\n"
-        "2. Whole-file Overwrite / Create: Omit start_line and old_text; writes new_text directly.\n"
-        "3. Exact Text Replacement (Legacy): Provide old_text when line numbers are unknown.\n"
-        "Usage guideline: ALWAYS prefer using start_line/end_line after inspecting code via read_file_lines to minimize token transmission and guarantee 100% precision."
-    ),
-    annotations={"destructiveHint": True},
-)
-def edit_file(
+@registry.register
+def patch_file(
     path: str,
-    new_text: str = "",
+    edits: list[dict[str, Any]] = None,
+    dry_run: bool = False,
+    return_diff: str = "summary",
+    create_if_missing: bool = False,
+    new_text: str | None = None,
+    old_text: str | None = None,
     start_line: int | None = None,
     end_line: int | None = None,
-    create_if_missing: bool = False,
-    old_text: str | None = None,
 ) -> dict[str, Any]:
-    start = time.time()
-    norm_path = os.path.expanduser(path)
-
+    """Structured file editor (Patch Tool). NEVER rewrite the whole file! Workflow: 1. read_file_or_outline(outline) -> 2. patch_file(edits) -> 3. read_file_or_outline(verify) Provide an array of edits. Supported ops: search_replace, replace_range, replace_symbol. Set dry_run: true to preview diffs safely."""
     try:
+        norm_path = resolve_safe_path(path)
         if not os.path.exists(norm_path):
-            if create_if_missing:
-                parent_dir = os.path.dirname(norm_path)
-                if parent_dir and not os.path.exists(parent_dir):
-                    os.makedirs(parent_dir, exist_ok=True)
-                _atomic_write(norm_path, new_text)
-                duration = round(time.time() - start, 4)
-                structured_logging.structured(
-                    "file_created", path=norm_path, size=len(new_text), duration=duration
-                )
-                return {
-                    "status": "success",
-                    "path": norm_path,
-                    "action": "created",
-                    "duration": duration,
-                }
-            return {
-                "status": "error",
-                "path": norm_path,
-                "error": "File not found",
-                "duration": round(time.time() - start, 4),
-            }
+            if create_if_missing: open(norm_path, 'a').close()
+            else: return {"ok": False, "error": f"File {os.path.basename(norm_path)} not found. Set create_if_missing=true."}
 
-        if os.path.isdir(norm_path):
-            return {
-                "status": "error",
-                "path": norm_path,
-                "error": "Target is a directory",
-                "duration": round(time.time() - start, 4),
-            }
+        with open(norm_path, "r", encoding="utf-8") as f: original_text = f.read()
+        current_text = original_text
+        applied = 0
+        warnings = []
+        if edits is None:
+            edits = []
+            if old_text is not None and new_text is not None:
+                edits.append({'op': 'search_replace', 'search': old_text, 'replace': new_text})
+            elif start_line is not None and end_line is not None and new_text is not None:
+                edits.append({'op': 'replace_range', 'start_line': start_line, 'end_line': end_line, 'new_text': new_text})
+            elif new_text is not None:
+                edits.append({'op': 'replace_range', 'start_line': 1, 'end_line': max(1, len(original_text.splitlines())), 'new_text': new_text})
 
-        with open(norm_path, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
+        for edit in edits:
+            op = edit.get("op")
+            if op == "search_replace":
+                search = edit.get("search", "")
+                replace = edit.get("replace", "")
+                occurrence = edit.get("occurrence")
+                if search not in current_text: return {"ok": False, "error": "search_not_unique", "suggestion": f"Could not find exact text block.", "edit": edit}
+                count = current_text.count(search)
+                if count > 1 and occurrence is None: return {"ok": False, "error": "search_not_unique", "suggestion": "Multiple matches found. Specify 'occurrence'."}
+                if occurrence:
+                    parts = current_text.split(search)
+                    if occurrence > len(parts) - 1: return {"ok": False, "error": f"occurrence {occurrence} out of bounds (only {count} found)."}
+                    current_text = search.join(parts[:occurrence]) + replace + search.join(parts[occurrence:])
+                else: current_text = current_text.replace(search, replace)
+            elif op == "replace_range":
+                sl = max(0, edit.get("start_line", 1) - 1)
+                el = edit.get("end_line", len(current_text.splitlines()))
+                lines_cur = current_text.splitlines()
+                lines_cur[sl:el] = edit.get("new_text", "").splitlines()
+                current_text = "\n".join(lines_cur) + ("\n" if current_text.endswith("\n") else "")
+            elif op == "replace_symbol":
+                symbol = edit.get("symbol")
+                if not symbol: return {"ok": False, "error": "replace_symbol requires 'symbol'"}
+                lines_cur = current_text.splitlines()
+                bounds = _find_symbol_block(lines_cur, symbol)
+                if bounds:
+                    sl, el = bounds
+                    lines_cur[sl-1:el] = edit.get("new_text", "").splitlines()
+                    current_text = "\n".join(lines_cur) + ("\n" if current_text.endswith("\n") else "")
+                else: return {"ok": False, "error": f"Symbol '{symbol}' not found."}
+            applied += 1
 
-        # 模式 1: 按行号范围精准替换/插入 (核心推荐模式)
-        if start_line is not None:
-            lines = content.splitlines(keepends=True)
-            total_lines = len(lines)
-            s_line = int(start_line)
+        orig_lines = original_text.splitlines(keepends=True)
+        curr_lines = current_text.splitlines(keepends=True)
+        diff_gen = list(difflib.unified_diff(orig_lines, curr_lines, fromfile=path, tofile=path))
+        diff_text = "".join(diff_gen)
 
-            if s_line < 1:
-                return {
-                    "status": "error",
-                    "path": norm_path,
-                    "error": f"start_line ({s_line}) must be >= 1",
-                    "duration": round(time.time() - start, 4),
-                }
+        if not dry_run and original_text != current_text:
+            temp_path = f"{norm_path}.tmp.{os.getpid()}"
+            with open(temp_path, "w", encoding="utf-8") as f: f.write(current_text)
+            os.replace(temp_path, norm_path)
 
-            if total_lines == 0:
-                if s_line == 1:
-                    _atomic_write(norm_path, new_text)
-                    duration = round(time.time() - start, 4)
-                    return {
-                        "status": "success",
-                        "path": norm_path,
-                        "action": "line_replaced",
-                        "start_line": 1,
-                        "end_line": 1,
-                        "lines_replaced": 0,
-                        "total_lines": len(new_text.splitlines()),
-                        "duration": duration,
-                    }
-                return {
-                    "status": "error",
-                    "path": norm_path,
-                    "error": f"start_line ({s_line}) exceeds empty file",
-                    "duration": round(time.time() - start, 4),
-                }
-
-            if s_line > total_lines + 1:
-                return {
-                    "status": "error",
-                    "path": norm_path,
-                    "error": f"start_line ({s_line}) exceeds file line count ({total_lines})",
-                    "duration": round(time.time() - start, 4),
-                }
-
-            e_line = int(end_line) if end_line is not None else s_line
-            if e_line < s_line - 1:
-                return {
-                    "status": "error",
-                    "path": norm_path,
-                    "error": f"end_line ({e_line}) cannot be less than start_line - 1 ({s_line - 1})",
-                    "duration": round(time.time() - start, 4),
-                }
-
-            prefix = "".join(lines[: s_line - 1])
-            suffix = "".join(lines[e_line:]) if e_line >= s_line else "".join(lines[s_line - 1 :])
-
-            replacement = new_text
-            if suffix and replacement and not replacement.endswith(("\n", "\r\n")):
-                replacement += "\n"
-
-            updated_content = prefix + replacement + suffix
-            _atomic_write(norm_path, updated_content)
-
-            duration = round(time.time() - start, 4)
-            is_insertion = e_line < s_line
-            action = "inserted" if is_insertion else "line_replaced"
-            lines_replaced = 0 if is_insertion else (min(e_line, total_lines) - s_line + 1)
-            new_total = len(updated_content.splitlines())
-
-            structured_logging.structured(
-                "file_line_edited",
-                path=norm_path,
-                action=action,
-                start_line=s_line,
-                end_line=e_line,
-                lines_replaced=lines_replaced,
-                duration=duration,
-            )
-
-            return {
-                "status": "success",
-                "path": norm_path,
-                "action": action,
-                "start_line": s_line,
-                "end_line": e_line,
-                "lines_replaced": lines_replaced,
-                "total_lines": new_total,
-                "duration": duration,
-            }
-
-        # 模式 2: 传统 old_text 文本唯一替换
-        if old_text is not None and old_text != "":
-            occurrences = content.count(old_text)
-            if occurrences == 0:
-                return {
-                    "status": "error",
-                    "path": norm_path,
-                    "error": "old_text not found in file",
-                    "duration": round(time.time() - start, 4),
-                }
-            if occurrences > 1:
-                return {
-                    "status": "error",
-                    "path": norm_path,
-                    "error": f"old_text found {occurrences} times; must be unique to replace",
-                    "duration": round(time.time() - start, 4),
-                }
-
-            updated_content = content.replace(old_text, new_text, 1)
-            _atomic_write(norm_path, updated_content)
-
-            duration = round(time.time() - start, 4)
-            structured_logging.structured(
-                "file_edited",
-                path=norm_path,
-                replacements=1,
-                duration=duration,
-            )
-            return {
-                "status": "success",
-                "path": norm_path,
-                "action": "edited",
-                "replacements": 1,
-                "duration": duration,
-            }
-
-        # 模式 3: 全量覆写
-        _atomic_write(norm_path, new_text)
-        duration = round(time.time() - start, 4)
-        structured_logging.structured(
-            "file_overwritten", path=norm_path, size=len(new_text), duration=duration
-        )
-        return {
-            "status": "success",
-            "path": norm_path,
-            "action": "overwritten",
-            "replacements": 0,
-            "duration": duration,
-        }
-
+        diff_out = diff_text if return_diff == "full" else (diff_text[:2000] + "\n...[Diff truncated]..." if len(diff_text) > 2000 else diff_text)
+        return {"ok": True, "applied": applied, "files": [{"path": norm_path, "lines_added": sum(1 for l in diff_gen if l.startswith('+') and not l.startswith('+++')), "lines_removed": sum(1 for l in diff_gen if l.startswith('-') and not l.startswith('---'))}], "diff": diff_out, "dry_run": dry_run, "warnings": warnings}
     except Exception as e:
-        return {
-            "status": "error",
-            "path": norm_path,
-            "error": str(e),
-            "duration": round(time.time() - start, 4),
-        }
+        return {"ok": False, "error": str(e)}

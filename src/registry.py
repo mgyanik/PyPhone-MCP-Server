@@ -7,39 +7,44 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 
-def _infer_json_type(annotation: Any) -> str:
+def _infer_json_schema(annotation: Any) -> dict[str, Any]:
     import typing
     import types
     if isinstance(annotation, str):
         if "list[" in annotation or annotation == "list":
-            return "array"
+            return {"type": "array", "items": {"type": "string"}}
         if "dict[" in annotation or annotation == "dict":
-            return "object"
+            return {"type": "object"}
         if "bool" in annotation:
-            return "boolean"
+            return {"type": "boolean"}
         if "int" in annotation or "float" in annotation:
-            return "number"
-        return "string"
+            return {"type": "number"}
+        return {"type": "string"}
 
     origin = typing.get_origin(annotation)
     if origin is typing.Union or (hasattr(types, "UnionType") and origin is types.UnionType):
         # 联合类型：取非 None 的分支
         args = [a for a in typing.get_args(annotation) if a is not type(None)]
         if args:
-            return _infer_json_type(args[0])
-        return "string"
+            return _infer_json_schema(args[0])
+        return {"type": "string"}
     if origin is list or annotation is list:
-        return "array"
+        schema = {"type": "array"}
+        args = typing.get_args(annotation)
+        if args:
+            schema["items"] = _infer_json_schema(args[0])
+        else:
+            schema["items"] = {"type": "string"}
+        return schema
     if origin is dict or annotation is dict:
-        return "object"
+        return {"type": "object"}
     if annotation is bool:
-        return "boolean"
+        return {"type": "boolean"}
     if annotation in (int, float):
-        return "number"
+        return {"type": "number"}
     if annotation is str:
-        return "string"
-    return "string"
-
+        return {"type": "string"}
+    return {"type": "string"}
 @dataclass
 class ToolDefinition:
     name: str
@@ -52,7 +57,6 @@ class ToolDefinition:
         return {
             "name": self.name,
             "description": self.description,
-            "annotations": self.annotations,
             "inputSchema": self.parameters,
         }
 
@@ -93,9 +97,9 @@ class ToolRegistry:
             if param_name in ("self", "cls"):
                 continue
             param_ann = type_hints.get(param_name, param.annotation)
-            param_type = _infer_json_type(param_ann)
+            param_schema = _infer_json_schema(param_ann)
 
-            properties[param_name] = {"type": param_type}
+            properties[param_name] = param_schema
             if param.default == inspect.Parameter.empty:
                 required.append(param_name)
 
@@ -134,6 +138,15 @@ class ToolRegistry:
         tool_def = self.get_tool(name)
         if not tool_def:
             raise ValueError(f"未找到工具: {name}")
+            
+        # 兼容处理：过滤掉客户端注入的多余参数（例如特殊平台框架强加的 "_" dummy参数）
+        sig = inspect.signature(tool_def.func)
+        has_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        
+        if not has_kwargs:
+            valid_keys = set(sig.parameters.keys())
+            arguments = {k: v for k, v in arguments.items() if k in valid_keys}
+            
         return tool_def.func(**arguments)
 
 
@@ -162,22 +175,23 @@ mcp = MCPFacade(registry)
 
 
 def load_tools() -> None:
-    """导入并注册所有工具（文件读写、目录检索、命令执行、后台任务、系统设备与网络）。"""
-    # 导入工具模块以触发装饰器注册
-    import src.tools.read_file  # noqa: F401
-    import src.tools.read_file_lines  # noqa: F401
-    import src.tools.edit_file  # noqa: F401
-    import src.tools.manage_file  # noqa: F401
-    import src.tools.get_file_info  # noqa: F401
-    import src.tools.file_info  # noqa: F401
-    import src.tools.list_dir  # noqa: F401
-    import src.tools.search_text  # noqa: F401
-    import src.tools.run_command  # noqa: F401
-    import src.tools.run_background_command  # noqa: F401
-    import src.tools.get_task_status  # noqa: F401
-    import src.tools.list_tasks  # noqa: F401
-    import src.tools.cancel_task  # noqa: F401
+    """Pre-load all tools so they register themselves."""
     import src.tools.fetch_url  # noqa: F401
     import src.tools.find_process  # noqa: F401
-    import src.tools.kill_process  # noqa: F401
-    import src.tools.get_device_status  # noqa: F401
+    import src.tools.list_dir  # noqa: F401
+    import src.tools.manage_file  # noqa: F401
+    import src.tools.read_file  # noqa: F401
+    import src.tools.search_text  # noqa: F401
+    import src.tools.get_file_info  # noqa: F401
+    import src.tools.edit_file  # noqa: F401
+    import src.tools.take_github  # noqa: F401
+    import src.tools.ask  # noqa: F401
+    import src.tools.request_tool  # noqa: F401
+    registry.register_alias("edit__file", "patch_file")
+    registry.register_alias("read_file", "read_file_or_outline")
+    registry.register_alias("read_file_lines", "read_file_or_outline")
+    registry.register_alias("search_text", "search_codebase")
+    registry.register_alias("list_dir", "list_directory")
+    registry.register_alias("MCP__list_dir", "list_directory")
+    registry.register_alias("get_file_info", "inspect_file_meta")
+    registry.register_alias("manage_file", "move_or_delete_file")
