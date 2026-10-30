@@ -10,9 +10,10 @@ from src.core import logging as structured_logging
 from src.registry import mcp
 
 
-def _get_listening_inodes_for_port(target_port: int) -> set[str]:
+def _get_listening_inodes_for_port(target_port: int) -> tuple[set[str], bool]:
     """从 /proc/net/tcp 与 /proc/net/tcp6 解析监听该端口的 socket inode。"""
-    matching_inodes = set()
+    matching_inodes: set[str] = set()
+    net_table_readable = False
     hex_port = f"{target_port:04X}"
 
     for proc_net_file in ("/proc/net/tcp", "/proc/net/tcp6"):
@@ -21,6 +22,7 @@ def _get_listening_inodes_for_port(target_port: int) -> set[str]:
         try:
             with open(proc_net_file, "r", encoding="utf-8", errors="ignore") as f:
                 lines = f.readlines()
+            net_table_readable = True
             for line in lines[1:]:
                 fields = line.strip().split()
                 if len(fields) >= 10:
@@ -33,14 +35,15 @@ def _get_listening_inodes_for_port(target_port: int) -> set[str]:
         except Exception:
             pass
 
-    return matching_inodes
+    return matching_inodes, net_table_readable
 
 
-def _find_pids_by_socket_inodes(target_inodes: set[str]) -> set[int]:
+def _find_pids_by_socket_inodes(target_inodes: set[str]) -> tuple[set[int], bool]:
     """通过扫描 /proc/{pid}/fd 找到持有对应 socket inode 的进程 PID。"""
-    matched_pids = set()
+    matched_pids: set[int] = set()
     if not target_inodes:
-        return matched_pids
+        return matched_pids, False
+    fd_dir_readable = False
 
     target_patterns = {f"socket:[{inode}]" for inode in target_inodes}
 
@@ -50,19 +53,21 @@ def _find_pids_by_socket_inodes(target_inodes: set[str]) -> set[int]:
         if not os.path.exists(fd_dir):
             continue
         try:
-            for fd in os.listdir(fd_dir):
-                fd_path = os.path.join(fd_dir, fd)
-                try:
-                    target = os.readlink(fd_path)
-                    if target in target_patterns:
-                        matched_pids.add(int(pid_str))
-                        break
-                except (OSError, PermissionError):
-                    continue
+            fd_entries = os.listdir(fd_dir)
         except (OSError, PermissionError):
             continue
+        fd_dir_readable = True
+        for fd in fd_entries:
+            fd_path = os.path.join(fd_dir, fd)
+            try:
+                target = os.readlink(fd_path)
+            except (OSError, PermissionError):
+                continue
+            if target in target_patterns:
+                matched_pids.add(int(pid_str))
+                break
 
-    return matched_pids
+    return matched_pids, fd_dir_readable
 
 
 @mcp.tool(
@@ -73,9 +78,17 @@ def find_process(port: int | None = None, name: str | None = None) -> dict[str, 
     start = time.time()
 
     target_pids_from_port: set[int] | None = None
+    degraded = False
+    warnings: list[str] = []
     if port is not None:
-        inodes = _get_listening_inodes_for_port(int(port))
-        target_pids_from_port = _find_pids_by_socket_inodes(inodes)
+        inodes, net_table_readable = _get_listening_inodes_for_port(int(port))
+        if not net_table_readable:
+            degraded = True
+            warnings.append("/proc/net/tcp and /proc/net/tcp6 unreadable; port filter unreliable")
+        target_pids_from_port, fd_dir_readable = _find_pids_by_socket_inodes(inodes)
+        if inodes and not fd_dir_readable:
+            degraded = True
+            warnings.append("/proc/<pid>/fd unreadable; cannot map listening port to pid")
 
     matched_processes: list[dict[str, Any]] = []
     name_needle = name.strip().lower() if name else None
@@ -141,7 +154,9 @@ def find_process(port: int | None = None, name: str | None = None) -> dict[str, 
     )
 
     return {
-        "status": "success",
+        "status": "degraded" if degraded else "success",
+        "degraded": degraded,
+        "warnings": warnings,
         "port": port,
         "name_filter": name,
         "count": len(matched_processes),

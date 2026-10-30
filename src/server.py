@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import select
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -16,12 +18,43 @@ from src.registry import load_tools, registry
 # 向后兼容测试用例直接访问的属性
 _active_sessions = session_manager._sessions
 
+# 连接与请求体保护参数
+MAX_REQUEST_BYTES = 4 * 1024 * 1024  # 单次 POST 请求体上限 4MB
+SSE_KEEPALIVE_INTERVAL = 15.0  # SSE 保活间隔（秒）
+SSE_MAX_LIFETIME = 600.0  # SSE 连接最大存活时长（秒）
+SSE_MAX_CONNECTIONS = 16  # 并发 SSE 连接上限，防止线程无限累积
+
+_sse_active = 0
+_sse_lock = threading.Lock()
+
+
+def _acquire_sse_slot() -> bool:
+    """占用一个 SSE 连接名额；超限返回 False。"""
+    global _sse_active
+    with _sse_lock:
+        if _sse_active >= SSE_MAX_CONNECTIONS:
+            return False
+        _sse_active += 1
+    return True
+
+
+def _release_sse_slot() -> None:
+    """释放 SSE 连接名额。"""
+    global _sse_active
+    with _sse_lock:
+        if _sse_active > 0:
+            _sse_active -= 1
+
+
 
 class MCPRequestHandler(BaseHTTPRequestHandler):
     """处理 MCP JSON-RPC 2.0 协议请求。"""
 
     protocol_version = "HTTP/1.1"
     server_version = "phone-mcp-py/0.2.0"
+    # 单连接最长静默等待，避免半开连接永久占用工作线程（大于 take_github 的 60s 子进程超时）
+    timeout = 75
+    _sse_slot = False
 
     def log_message(self, format: str, *args: Any) -> None:
         sys.stderr.write(f"[HTTP] {self.address_string()} - {format % args}\n")
@@ -39,6 +72,15 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
 
     def _send_error(self, code: int, message: str, req_id: Any = None, status: int = 400) -> None:
         self._send_json(protocol.make_error(req_id, code, message), status=status)
+
+    def finish(self) -> None:
+        """请求收尾：确保 SSE 连接名额一定被释放。"""
+        try:
+            super().finish()
+        finally:
+            if getattr(self, "_sse_slot", False):
+                self._sse_slot = False
+                _release_sse_slot()
 
     def do_OPTIONS(self) -> None:
         """CORS 预检响应。"""
@@ -59,6 +101,15 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         client_session = self.headers.get("Mcp-Session-Id")
         if client_session:
             session_manager.validate_or_recover(client_session)
+
+        if not _acquire_sse_slot():
+            self._send_error(
+                protocol.INVALID_REQUEST,
+                f"Too many concurrent SSE connections (limit {SSE_MAX_CONNECTIONS})",
+                status=503,
+            )
+            return
+        self._sse_slot = True
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -81,8 +132,17 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             except Exception:
                 return
 
-            while True:
-                time.sleep(15)
+            deadline = time.monotonic() + SSE_MAX_LIFETIME
+            while time.monotonic() < deadline:
+                try:
+                    readable, _, _ = select.select(
+                        [self.connection], [], [], SSE_KEEPALIVE_INTERVAL
+                    )
+                except (OSError, ValueError):
+                    break
+                if readable:
+                    # 对端已关闭连接，主动退出，释放线程
+                    break
                 self.wfile.write(b": keepalive\n\n")
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
@@ -95,6 +155,14 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+        if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
+            self._send_error(
+                protocol.INVALID_REQUEST,
+                "Chunked transfer-encoding is not supported; send Content-Length",
+                status=400,
+            )
+            return
+
         content_length_hdr = self.headers.get("Content-Length")
         if not content_length_hdr:
             self._send_error(protocol.INVALID_REQUEST, "Missing Content-Length header", status=400)
@@ -102,10 +170,32 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
 
         try:
             length = int(content_length_hdr)
+        except ValueError:
+            self._send_error(protocol.INVALID_REQUEST, "Invalid Content-Length header", status=400)
+            return
+
+        if length < 0 or length > MAX_REQUEST_BYTES:
+            self.close_connection = True
+            self._send_error(
+                protocol.INVALID_REQUEST,
+                f"Request body length {length} exceeds limit {MAX_REQUEST_BYTES} bytes",
+                status=413,
+            )
+            return
+
+        try:
             raw_body = self.rfile.read(length).decode("utf-8")
             payload = json.loads(raw_body)
         except Exception as e:
             self._send_error(protocol.PARSE_ERROR, f"Parse error: {e}", status=400)
+            return
+
+        if not isinstance(payload, dict):
+            self._send_error(
+                protocol.INVALID_REQUEST,
+                "Batch or non-object JSON payload is not supported",
+                status=400,
+            )
             return
 
         req_id = payload.get("id")
@@ -176,11 +266,18 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         self._send_error(protocol.METHOD_NOT_FOUND, f"Method not found: {method}", req_id=req_id, status=404)
 
 
+class MCPHTTPServer(ThreadingHTTPServer):
+    """提高连接排队上限，避免默认 backlog 被半开连接占满后丢弃新连接。"""
+
+    daemon_threads = True
+    request_queue_size = 128
+    allow_reuse_address = True
+
+
 def run_server(host: str = HOST, port: int = PORT) -> None:
     load_tools()
     server_address = (host, port)
-    httpd = ThreadingHTTPServer(server_address, MCPRequestHandler)
-    httpd.daemon_threads = True
+    httpd = MCPHTTPServer(server_address, MCPRequestHandler)
     print(f"[phone-mcp-py] listening on {host}:{port}", flush=True)
     try:
         httpd.serve_forever()
