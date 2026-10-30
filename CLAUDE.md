@@ -14,6 +14,7 @@
 
 ```
 src/
+  __init__.py               # 包标记，缺失会导致 python3 -m src.server 报 No module named src.server
   config.py                 # 全局运行配置、环境变量与沙箱根路径
   server.py                 # MCP HTTP/SSE 协议传输层入口 (端口 3000)
   registry.py               # MCP 工具注册中心与兼容别名映射
