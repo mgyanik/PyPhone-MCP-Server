@@ -9,6 +9,7 @@ import shlex
 import subprocess
 from typing import Any
 
+from src.core.auth_store import log_execution
 from src.core.security import resolve_safe_path
 from src.registry import registry
 
@@ -183,6 +184,16 @@ def take_github(
             timeout=60,
         )
         output = (result.stdout + "\n" + result.stderr).strip()
+
+        try:
+            log_execution(
+                cmd,
+                {"match": "exact", "tokens": cmd[:2], "source": "take_github"},
+                result.returncode,
+                "success" if result.returncode == 0 else "failed",
+            )
+        except Exception:
+            pass
 
         truncated = False
         if len(output) > 4000:

@@ -8,6 +8,9 @@ import os
 HOST: str = os.environ.get("HOST", "0.0.0.0")
 PORT: int = int(os.environ.get("PORT", 3000))
 
+# 可选访问令牌：设置后 MCP 端点要求 Authorization: Bearer <token>
+AUTH_TOKEN: str = os.environ.get("MCP_AUTH_TOKEN", "").strip()
+
 # Termux 运行环境
 TERMUX_PREFIX: str = "/data/data/com.termux/files/usr"
 TERMUX_HOME: str = "/data/data/com.termux/files/home"
@@ -31,10 +34,3 @@ SHELL_BIN: str = (
         else "/system/bin/sh"
     )
 )
-
-# 高并发工作池配置
-MAX_WORKERS: int = min(32, max(4, (os.cpu_count() or 2) * 4))
-
-# 任务与输出限制
-MAX_OUTPUT_BYTES: int = 50 * 1024  # 50KB 截断
-TASK_COMPLETED_TTL: float = 3600.0  # 已完成任务保留 1 小时

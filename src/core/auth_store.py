@@ -14,7 +14,7 @@ BLACKLIST_FILE = os.path.join(AUTH_DIR, "blacklist.json")
 LOG_FILE = os.path.join(AUTH_DIR, "exec_log.jsonl")
 
 def _atomic_write(filepath: str, data: dict | list) -> None:
-    tmp = f"{filepath}.tmp.{os.getpid()}"
+    tmp = f"{filepath}.tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, filepath)

@@ -16,7 +16,7 @@ PyPhone-MCP-Server 是专为 Android / Termux 环境构建的轻量级、高性�
 - **独立 WebUI 命令审批**：高危或未知 Shell 指令需通过内置 WebUI（端口 8080）显式批准，支持前缀通配与精确白/黑名单机制。
 - **多层安全沙箱保护**：
   - 路径严格限制在 Termux 沙箱（`/data/data/com.termux/files/home`）内，阻断 `..` 相对越界与非法绝对路径访问。
-  - 严格拦截破坏性 Git 操作（如 force-push、hard-reset 等），远程写操作受客户端与人工交互确认约束。
+  - `git` / `gh` 工具完全开放母命令与子命令，破坏性操作由会话中人工确认约束。
 - **专职工程工具集**：提供结构化文件修改（行范围/全量覆写/代码大纲）、代码全文搜索、免 root 进程/端口探查及 GitHub 操作工具。
 
 ### 运行环境
@@ -24,6 +24,7 @@ PyPhone-MCP-Server 是专为 Android / Termux 环境构建的轻量级、高性�
 - Android 设备（搭载 Termux 环境）
 - Python 3.10 或更高版本：`pkg install python`
 - Git：`pkg install git`
+- 可选：`daemonize`（`py-mcp.sh` 后台守护）、`pytest`（`make check`）
 
 ### 快速开始
 
@@ -104,7 +105,7 @@ PyPhone-MCP-Server is a lightweight, high-performance Model Context Protocol (MC
 - **Independent WebUI Authorization**: Commands require approval via the embedded WebUI (port 8080), featuring whitelist and blacklist policies.
 - **Multi-layer Security Sandbox**:
   - Confined strictly to the Termux root path (`/data/data/com.termux/files/home`), blocking relative path traversal (`..`) and absolute path escape.
-  - Strictly blocks destructive Git operations (e.g., force-push, hard-reset) while remote write actions are bounded by user confirmation.
+  - Fully open `git` / `gh` subcommands; destructive operations are bounded by in-session user confirmation.
 - **Comprehensive Toolset**: Includes range-based file editors, codebase search, rootless process discovery, and controlled GitHub operations.
 
 ### Prerequisites

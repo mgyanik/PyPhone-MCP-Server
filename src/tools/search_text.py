@@ -5,16 +5,15 @@ from src.registry import registry
 from src.core.security import resolve_safe_path
 
 MAX_MATCHES = 200
-EXCLUDE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "build", "dist"}
+EXCLUDE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "build", "dist", ".pytest_cache", ".mcp_test_tmp"}
 
 @registry.register
 def search_codebase(
     path: str,
     query: str | None = None,
     queries: list[str] | None = None,
-    _: bool = False,
 ) -> dict[str, Any]:
-    """Fast parallel keyword search. Supply 'query' string or 'queries' list. Auto-ignores .git/node_modules. Replaces grep/rg."""
+    """Fast keyword search. Supply 'query' string or 'queries' list. Auto-ignores .git/node_modules/.pytest_cache. Replaces grep/rg."""
     try:
         norm_path = resolve_safe_path(path)
         qs = [query] if query else []

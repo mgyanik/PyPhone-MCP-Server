@@ -15,7 +15,7 @@ fi
 PYTHON_BIN="/data/data/com.termux/files/usr/bin/python3"
 PID_FILE="$DIR/py-mcp.pid"
 LOG_FILE="$DIR/py-mcp.log"
-PORT=3000
+PORT="$( cd "$DIR" && "$PYTHON_BIN" -c 'from src.config import PORT; print(PORT)' 2>/dev/null || echo 3000 )"
 
 get_ip() {
     "$PYTHON_BIN" -c "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(('8.8.8.8', 80)); print(s.getsockname()[0]); s.close()" 2>/dev/null || echo "127.0.0.1"
@@ -68,7 +68,7 @@ start() {
 
     # 2. 启动 WebUI
     local webui_pids
-    webui_pids=$(ps aux | grep "[p]ython -m src.webui" | awk '{print $2}')
+    webui_pids=$(pgrep -f "src.webui" 2>/dev/null)
     if [ -z "$webui_pids" ]; then
         echo "[py-mcp] 正在启动 MCP 审批 WebUI..."
         daemonize -c "$DIR" -o "$DIR/webui.log" -e "$DIR/webui.log" "$PYTHON_BIN" -m src.webui
@@ -112,7 +112,7 @@ stop() {
 
     # 2. 停止 WebUI
     local webui_pids
-    webui_pids=$(ps aux | grep "[p]ython -m src.webui" | awk '{print $2}')
+    webui_pids=$(pgrep -f "src.webui" 2>/dev/null)
     if [ -n "$webui_pids" ]; then
         echo "[py-mcp] 正在停止 MCP 审批 WebUI..."
         kill -9 $webui_pids 2>/dev/null || true
@@ -137,7 +137,7 @@ status() {
     fi
 
     local webui_pids
-    webui_pids=$(ps aux | grep "[p]ython -m src.webui" | awk '{print $2}')
+    webui_pids=$(pgrep -f "src.webui" 2>/dev/null)
     if [ -n "$webui_pids" ]; then
         echo "[py-mcp] 状态: WebUI 运行中"
         echo "  - WebUI 端点: http://127.0.0.1:8080"

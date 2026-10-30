@@ -48,6 +48,8 @@ def request_tool(
                 return {"result": "Blocked: Command is in the blacklist."}
             if status == "unknown":
                 return {"result": "Not Approved: Command is not in whitelist. Use action='request' first."}
+            if shell and (rule or {}).get("match") != "exact":
+                return {"result": "Blocked: shell=True requires an exact-match whitelist rule."}
                 
             # Execute
             safe_cwd = resolve_safe_path(cwd)

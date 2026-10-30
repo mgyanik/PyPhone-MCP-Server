@@ -1,9 +1,9 @@
 import os
 import shutil
-import glob
 from typing import Any
 from src.registry import registry
 from src.core.security import resolve_safe_path
+from src.config import TERMUX_HOME
 
 @registry.register
 def move_or_delete_file(
@@ -21,6 +21,8 @@ def move_or_delete_file(
             return {"status": "error", "error": f"Source '{source}' not found"}
 
         if action == "remove":
+            if norm_src == TERMUX_HOME:
+                return {"status": "error", "error": "Refused: cannot remove the sandbox root itself"}
             if os.path.isdir(norm_src):
                 if not recursive:
                     return {"status": "error", "error": f"'{source}' is a directory. Set recursive=true"}
@@ -30,6 +32,8 @@ def move_or_delete_file(
             return {"status": "success", "action": action, "source": source}
 
         if action in ["copy", "move"]:
+            if action == "move" and norm_src == TERMUX_HOME:
+                return {"status": "error", "error": "Refused: cannot move the sandbox root itself"}
             if not norm_dst:
                 return {"status": "error", "error": f"Destination required for {action}"}
             

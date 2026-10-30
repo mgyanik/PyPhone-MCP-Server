@@ -7,7 +7,7 @@ from src.core.security import resolve_safe_path
 MAX_RESULTS = 1000
 
 @registry.register
-def list_directory(paths: list[str] | str = ".", _: bool = False) -> dict[str, Any]:
+def list_directory(paths: list[str] | str = ".") -> dict[str, Any]:
     """Fast parallel directory lister (results limited to 1000 to save tokens). If a dir is huge or you need specific files, ALWAYS use search_codebase instead of list_directory."""
     try:
         paths_list = [paths] if isinstance(paths, str) else paths

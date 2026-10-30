@@ -44,7 +44,18 @@ def read_file_or_outline(
             return {"status": "success", "path": norm_path, "start_line": sl + 1, "end_line": el, "total_lines": total_lines, "content": chunk}
 
         if total_lines > 500 and not force_full:
-            return {"status": "error", "error": f"File {os.path.basename(norm_path)} is {total_lines} lines long. Exceeds recommended single-read limit. Please use `outline=true`, specify `start_line` and `end_line`, or pass `force_full=true`."}
+            return {
+                "status": "success",
+                "path": norm_path,
+                "total_lines": total_lines,
+                "is_outline": True,
+                "needs_range": True,
+                "content": extract_outline(content),
+                "message": (
+                    f"File is {total_lines} lines long. Returned outline only; "
+                    "specify start_line/end_line or set force_full=true for full content."
+                ),
+            }
 
         return {"status": "success", "path": norm_path, "total_lines": total_lines, "content": content, "is_full_read": True}
     except Exception as e:

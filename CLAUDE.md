@@ -1,6 +1,6 @@
 # 项目约定 — PyPhone-MCP-Server
 
-本文件是 Agent 维护本项目时必须遵守的规范。改动代码必须以回读验证与针对性手动验证作为通过判据（测试基线重建前 `make check` 尚不可用，详见第 5 节）。
+本文件是 Agent 维护本项目时必须遵守的规范。改动代码必须回读验证，并运行 `make check`（需先安装 pytest，安装后以此为唯一通过判据）。
 
 ## 1. 项目定位与核心指标
 
@@ -21,10 +21,8 @@ src/
   core/
     protocol.py             # JSON-RPC 2.0 与 MCP 协议消息定义
     session.py              # 客户端会话管理
-    pool.py                 # 全局常驻高并发工作线程池
     security.py             # 路径沙箱解析与安全校验 (resolve_safe_path)
     auth_store.py           # WebUI 审批持久化存储 (pending/whitelist/blacklist/exec_log)
-    task_store.py           # 异步任务持久化与生命周期管理
     logging.py              # 结构化日志
   tools/
     edit_file.py            # patch_file (结构化局部补丁与范围覆写)
@@ -58,11 +56,13 @@ py-mcp.sh                   # 守护进程管理脚本 (start/stop/restart/statu
 
 ## 4. 核心安全机制
 
-- 路径沙箱：所有文件读写必须通过 `resolve_safe_path` 严格约束在 `TERMUX_HOME`（`/data/data/com.termux/files/home`）内，阻断 `..` 相对越界与非法绝对路径访问。
+- 路径沙箱：所有文件读写必须通过 `resolve_safe_path` 严格约束在 `TERMUX_HOME`（`/data/data/com.termux/files/home`）内，采用 `realpath` + `commonpath` 判定，阻断 `..` 相对越界、软链接逃逸与同前缀路径（如 `home_evil`）绕过。`move_or_delete_file` 额外拒绝删除或移动沙箱根自身。
 - 命令审批：系统命令统一收敛至 `request_tool`。未知命令先提交待审批，由管理员在 WebUI（端口 8080）显式批准后方可执行；规则支持原子持久化与自动去重；执行后自动追加执行审计日志。
 - Git/GitHub 执行控制：完全开放 git 与 gh 工具权限，彻底免除日常开发在 WebUI 堆积命令审批的负担。母命令严格限定为 git 与 gh 并采用参数列表直接执行，杜绝 shell 逃逸注入；远程写操作由模型在会话中直接向用户提出并获得明确确认后执行。
 - 传输层防护：单连接静默等待上限 75s（`MCPRequestHandler.timeout`）；监听 backlog 128（`MCPHTTPServer.request_queue_size`）；并发 SSE 连接上限 16，超限返回 503；单次 POST 请求体上限 4MB，超限返回 413；显式拒绝 `Transfer-Encoding: chunked` 与非对象 JSON 载荷；SSE 保活循环改用 `select` 探测断连并设 600s 最长存活，连接名额在 `finish()` 中保证释放。
 - 端口探测降级：`find_process` 在 `/proc/net/tcp` 或 `/proc/<pid>/fd` 不可读时返回 `status: degraded` 并附 `warnings`，不再静默返回空结果。
+- 访问控制：WebUI 默认仅绑定 `127.0.0.1`（`WEBUI_HOST` 可覆盖），避免同网段任意主机审批命令；MCP 端点默认 `0.0.0.0`，设置 `MCP_AUTH_TOKEN` 后要求 `Authorization: Bearer <token>`，缺失或错误返回 401。
+- 注册表契约：工具重名注册直接抛错；调用时传入未知参数抛错（`_` 例外，兼容部分平台注入的占位键）；`annotations`（如 `readOnlyHint`）随 `tools/list` 下发。
 
 ## 5. 开发者与 Agent 工作规范
 
@@ -73,7 +73,7 @@ py-mcp.sh                   # 守护进程管理脚本 (start/stop/restart/statu
 4. 确认后再执行修改；
 5. 修改完成后必须回读验证，并运行针对性测试：
 ```bash
-make check   # 测试基线重建前不可作为通过判据
+make check   # 唯一通过判据
 ```
-   测试基线现状：`tests/test_new_tools.py`、`tests/test_edit_file.py`、`tests/test_realtime_task.py`、`tests/test_concurrency.py` 引用了已删除的工具符号，`tests/test_annotations.py` 断言的工具数量（16）与别名（`read_files`/`search_texts`/`start_task`）已过期，因此 `make check` 目前无法全量通过。基线重建之前，以「改动文件回读验证 + 手动针对性验证」作为通过判据，不得声称 `make check` 已通过。
+   测试基线现状：已重建为 `tests/test_tools.py`（9 工具契约）、`tests/test_registry.py`（注册表契约）、`tests/test_server.py`（传输层）、`tests/conftest.py`（sys.path 注入），当前 22 项全部通过。pytest 安装在 `python3.14` 解释器下，`Makefile` 已固定 `PYTHON ?= python3.14`；若切换解释器用 `make PYTHON=python3`。`make check` 是唯一通过判据，不得凭空声称已通过。
 未经用户明确确认，不得直接改动代码或执行提交/推送。

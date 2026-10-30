@@ -1,6 +1,8 @@
 import os
 import difflib
 import re
+import shutil
+import uuid
 from typing import Any
 from src.registry import registry
 from src.core.security import resolve_safe_path
@@ -35,6 +37,7 @@ def patch_file(
     dry_run: bool = False,
     return_diff: str = "summary",
     create_if_missing: bool = False,
+    allow_full_overwrite: bool = False,
     new_text: str | None = None,
     old_text: str | None = None,
     start_line: int | None = None,
@@ -58,6 +61,8 @@ def patch_file(
             elif start_line is not None and end_line is not None and new_text is not None:
                 edits.append({'op': 'replace_range', 'start_line': start_line, 'end_line': end_line, 'new_text': new_text})
             elif new_text is not None:
+                if not allow_full_overwrite:
+                    return {"ok": False, "error": "ambiguous_overwrite", "suggestion": "Provide old_text or start_line/end_line, or set allow_full_overwrite=true to replace the whole file."}
                 edits.append({'op': 'replace_range', 'start_line': 1, 'end_line': max(1, len(original_text.splitlines())), 'new_text': new_text})
 
         for edit in edits:
@@ -78,6 +83,8 @@ def patch_file(
                 sl = max(0, edit.get("start_line", 1) - 1)
                 el = edit.get("end_line", len(current_text.splitlines()))
                 lines_cur = current_text.splitlines()
+                sl = min(sl, len(lines_cur))
+                el = min(el, len(lines_cur))
                 lines_cur[sl:el] = edit.get("new_text", "").splitlines()
                 current_text = "\n".join(lines_cur) + ("\n" if current_text.endswith("\n") else "")
             elif op == "replace_symbol":
@@ -98,11 +105,15 @@ def patch_file(
         diff_text = "".join(diff_gen)
 
         if not dry_run and original_text != current_text:
-            temp_path = f"{norm_path}.tmp.{os.getpid()}"
+            temp_path = f"{norm_path}.tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}"
             with open(temp_path, "w", encoding="utf-8") as f: f.write(current_text)
+            try:
+                shutil.copymode(norm_path, temp_path)
+            except OSError:
+                pass
             os.replace(temp_path, norm_path)
 
         diff_out = diff_text if return_diff == "full" else (diff_text[:2000] + "\n...[Diff truncated]..." if len(diff_text) > 2000 else diff_text)
-        return {"ok": True, "applied": applied, "files": [{"path": norm_path, "lines_added": sum(1 for l in diff_gen if l.startswith('+') and not l.startswith('+++')), "lines_removed": sum(1 for l in diff_gen if l.startswith('-') and not l.startswith('---'))}], "diff": diff_out, "dry_run": dry_run, "warnings": warnings}
+        return {"ok": True, "applied": applied, "files": [{"path": norm_path, "lines_added": sum(1 for l in diff_gen if l.startswith('+') and not l.startswith('+++')), "lines_removed": sum(1 for l in diff_gen if l.startswith('-') and not l.startswith('---'))}], "diff": diff_out, "dry_run": dry_run, "no_change": original_text == current_text, "warnings": warnings}
     except Exception as e:
         return {"ok": False, "error": str(e)}

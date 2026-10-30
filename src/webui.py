@@ -116,6 +116,10 @@ HTML = """<!DOCTYPE html>
             }).join(' ');
         }
 
+        function esc(value) {
+            return String(value == null ? '' : value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
         function buildTokens(command, mode) {
             if (mode === 'exact') return command;
             if (mode === 'prefix_1') return command.slice(0, 1);
@@ -132,7 +136,10 @@ HTML = """<!DOCTYPE html>
         }
 
         function deleteRule(list, index) {
-            if (confirm("确定要删除这条规则吗？")) postAction('/api/delete_rule', { list: list, index: index });
+            const entries = list === 'whitelist' ? currentData.whitelist : currentData.blacklist;
+            const rule = entries[index];
+            if (!rule) { fetchData(); return; }
+            if (confirm("确定要删除这条规则吗？")) postAction('/api/delete_rule', { list: list, tokens: rule.tokens, match: rule.match });
         }
 
         function render() {
@@ -144,15 +151,15 @@ HTML = """<!DOCTYPE html>
                 pDiv.innerHTML = currentData.pending.map(p => `
                     <div class="card">
                         <span class="badge pending">待审批</span>
-                        <div class="code">${formatCommand(p.command)}</div>
-                        <div class="meta-text"><strong>工作目录:</strong> ${p.cwd}</div>
-                        <div class="meta-text"><strong>申请原因:</strong> ${p.reason}</div>
+                        <div class="code">${esc(formatCommand(p.command))}</div>
+                        <div class="meta-text"><strong>工作目录:</strong> ${esc(p.cwd)}</div>
+                        <div class="meta-text"><strong>申请原因:</strong> ${esc(p.reason)}</div>
                         
                         <div class="controls">
                             <select id="mode-${p.request_id}">
                                 <option value="exact">🎯 精确匹配 (仅允许此完整命令)</option>
-                                <option value="prefix_1">📁 母命令通配 (允许 ${formatCommand(p.command.slice(0, 1))} 的所有参数)</option>
-                                ${p.command.length > 1 ? `<option value="prefix_2">📄 子命令通配 (允许 ${formatCommand(p.command.slice(0, 2))} 的参数)</option>` : ''}
+                                <option value="prefix_1">📁 母命令通配 (允许 ${esc(formatCommand(p.command.slice(0, 1)))} 的所有参数)</option>
+                                ${p.command.length > 1 ? `<option value="prefix_2">📄 子命令通配 (允许 ${esc(formatCommand(p.command.slice(0, 2)))} 的参数)</option>` : ''}
                             </select>
                             <div class="btn-group">
                                 <button class="action-btn btn-success" onclick="handleProcess('${p.request_id}', true)">✅ 批准</button>
@@ -176,8 +183,8 @@ HTML = """<!DOCTYPE html>
                             <span class="badge ${r.match}">${r.match === 'exact' ? '🎯 精确匹配' : '📁 前缀通配'}</span>
                             <button class="action-btn btn-outline" style="padding: 4px 12px; font-size: 13px; width: auto;" onclick="deleteRule('${type}', ${i})">删除</button>
                         </div>
-                        <div class="code" style="margin-top:0;">${formatCommand(r.tokens)} ${r.match === 'prefix' ? '...' : ''}</div>
-                        <div class="meta-text" style="font-size: 12px;">时间: ${r.approved_at || r.blocked_at || '未知'}</div>
+                        <div class="code" style="margin-top:0;">${esc(formatCommand(r.tokens))} ${r.match === 'prefix' ? '...' : ''}</div>
+                        <div class="meta-text" style="font-size: 12px;">时间: ${esc(r.approved_at || r.blocked_at || '未知')}</div>
                     </div>
                 `).join('');
             };
@@ -195,8 +202,8 @@ HTML = """<!DOCTYPE html>
                             <span class="badge ${l.result === 'success' ? 'prefix' : 'danger'}">${l.result === 'success' ? '✅ 成功' : '❌ 失败'}</span>
                             <span style="font-size: 12px; color: var(--gray);">${l.timestamp.substring(11, 16)}</span>
                         </div>
-                        <div class="code" style="margin-top:0; margin-bottom: 8px; font-size: 13px;">${formatCommand(l.command)}</div>
-                        <div class="meta-text" style="font-size: 12px;">退出码: ${l.exit_code} | 命中规则: ${l.rule ? l.rule.match : '无'}</div>
+                        <div class="code" style="margin-top:0; margin-bottom: 8px; font-size: 13px;">${esc(formatCommand(l.command))}</div>
+                        <div class="meta-text" style="font-size: 12px;">退出码: ${esc(l.exit_code)} | 命中规则: ${esc(l.rule ? l.rule.match : '无')}</div>
                     </div>
                 `).join('');
             }
@@ -270,10 +277,16 @@ class RequestHandler(BaseHTTPRequestHandler):
             elif self.path == '/api/delete_rule':
                 t_file = WHITELIST_FILE if data.get("list") == "whitelist" else BLACKLIST_FILE
                 rules = _read_json(t_file, {"entries": []})
-                idx = int(data.get("index"))
-                if 0 <= idx < len(rules.get("entries", [])):
-                    rules["entries"].pop(idx)
-                    _atomic_write(t_file, rules)
+                entries = rules.get("entries", [])
+                tokens = data.get("tokens")
+                match = data.get("match")
+                if tokens is not None:
+                    rules["entries"] = [e for e in entries if not (e.get("tokens") == tokens and e.get("match") == match)]
+                else:
+                    idx = int(data.get("index", -1))
+                    if 0 <= idx < len(entries):
+                        entries.pop(idx)
+                _atomic_write(t_file, rules)
 
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -289,7 +302,8 @@ class RequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args): pass
 
 def run_server(port=8080):
-    server = ThreadingHTTPServer(('0.0.0.0', port), RequestHandler)
+    host = os.environ.get("WEBUI_HOST", "127.0.0.1")
+    server = ThreadingHTTPServer((host, port), RequestHandler)
     server.serve_forever()
 
 if __name__ == '__main__':

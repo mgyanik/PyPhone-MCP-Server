@@ -10,7 +10,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from src.config import HOST, PORT
+from src.config import HOST, PORT, AUTH_TOKEN
 from src.core import protocol
 from src.core.session import session_manager
 from src.registry import load_tools, registry
@@ -59,6 +59,14 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         sys.stderr.write(f"[HTTP] {self.address_string()} - {format % args}\n")
 
+    def _token_ok(self) -> bool:
+        """配置 MCP_AUTH_TOKEN 时校验 Bearer 令牌；未配置时仅放行回环地址。"""
+        if AUTH_TOKEN:
+            header = self.headers.get("Authorization", "")
+            return header.strip() == f"Bearer {AUTH_TOKEN}"
+        peer = (self.client_address or ("",))[0]
+        return peer in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
     def _send_json(self, data: dict[str, Any], status: int = 200, session_id: str | None = None) -> None:
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -101,6 +109,10 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         client_session = self.headers.get("Mcp-Session-Id")
         if client_session:
             session_manager.validate_or_recover(client_session)
+
+        if not self._token_ok():
+            self._send_error(protocol.INVALID_REQUEST, "Unauthorized", status=401)
+            return
 
         if not _acquire_sse_slot():
             self._send_error(
@@ -161,6 +173,10 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 "Chunked transfer-encoding is not supported; send Content-Length",
                 status=400,
             )
+            return
+
+        if not self._token_ok():
+            self._send_error(protocol.INVALID_REQUEST, "Unauthorized", status=401)
             return
 
         content_length_hdr = self.headers.get("Content-Length")

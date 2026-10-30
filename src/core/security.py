@@ -11,7 +11,13 @@ def resolve_safe_path(requested_path: str) -> str:
     else:
         abs_path = os.path.normpath(os.path.join(TERMUX_HOME, requested_path))
         
-    if not abs_path.startswith(TERMUX_HOME):
+    real_home = os.path.realpath(TERMUX_HOME)
+    real_path = os.path.realpath(abs_path)
+    try:
+        inside = os.path.commonpath([real_home, real_path]) == real_home
+    except ValueError:
+        inside = False
+    if not inside:
         raise ValueError(
             f"Security Error: Path '{requested_path}' escapes the sandbox. "
             f"All operations are restricted to {TERMUX_HOME}."

@@ -13,6 +13,12 @@ license = { text = "MIT" }
 [project.scripts]
 py-mcp-server = "src.server:run_server"
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools]
+packages = ["src", "src.core", "src.tools"]
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["tests"]

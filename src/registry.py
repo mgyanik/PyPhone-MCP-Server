@@ -54,11 +54,14 @@ class ToolDefinition:
     parameters: dict[str, Any] = field(default_factory=dict)
 
     def to_mcp_format(self) -> dict[str, Any]:
-        return {
+        data = {
             "name": self.name,
             "description": self.description,
             "inputSchema": self.parameters,
         }
+        if self.annotations:
+            data["annotations"] = self.annotations
+        return data
 
 
 class ToolRegistry:
@@ -80,6 +83,8 @@ class ToolRegistry:
         annotations: dict[str, Any] | None = None,
     ) -> Callable[..., Any]:
         tool_name = name or func.__name__
+        if tool_name in self._tools:
+            raise ValueError(f"Duplicate tool name registered: {tool_name}")
         desc = description or inspect.getdoc(func) or ""
         ann = annotations or getattr(func, "__mcp_annotations__", {})
 
@@ -145,6 +150,9 @@ class ToolRegistry:
         
         if not has_kwargs:
             valid_keys = set(sig.parameters.keys())
+            unknown = [k for k in arguments if k not in valid_keys and k != "_"]
+            if unknown:
+                raise ValueError(f"Unknown parameter(s) for tool '{name}': {', '.join(sorted(unknown))}")
             arguments = {k: v for k, v in arguments.items() if k in valid_keys}
             
         return tool_def.func(**arguments)
