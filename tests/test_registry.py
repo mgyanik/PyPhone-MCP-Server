@@ -11,7 +11,6 @@ EXPECTED_TOOLS = {
     "search_codebase",
     "move_or_delete_file",
     "inspect_file_meta",
-    "request_tool",
     "find_process",
     "take_github",
 }

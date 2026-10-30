@@ -113,7 +113,6 @@ def test_tools_list_all_renamed_tools():
         "search_codebase",
         "move_or_delete_file",
         "inspect_file_meta",
-        "request_tool",
         "find_process",
         "take_github",
     }

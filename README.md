@@ -13,7 +13,6 @@ PyPhone-MCP-Server 是专为 Android / Termux 环境构建的轻量级、高性�
 
 - **零外部运行时依赖**：基于 Python 3 标准库构建，无需安装 pip 依赖包。
 - **MCP Streamable HTTP 协议**：遵循 MCP 2024-11-05 规范，采用 SSE 长连接机制，支持跨会话状态自愈与心跳维持。
-- **独立 WebUI 命令审批**：高危或未知 Shell 指令需通过内置 WebUI（端口 8080）显式批准，支持前缀通配与精确白/黑名单机制。
 - **多层安全沙箱保护**：
   - 路径严格限制在 Termux 沙箱（`/data/data/com.termux/files/home`）内，阻断 `..` 相对越界与非法绝对路径访问。
   - `git` / `gh` 工具完全开放母命令与子命令，破坏性操作由会话中人工确认约束。
@@ -57,7 +56,7 @@ chmod +x py-mcp.sh
 
 默认端点：
 - MCP 接口服务：`http://<手机IP>:3000/mcp`
-- 审批台 WebUI：`http://<手机IP>:8080`
+- 未设置 `MCP_AUTH_TOKEN` 时仅接受回环地址（`127.0.0.1`）；设置后需携带 `Authorization: Bearer <token>`
 
 ### 客户端接入配置
 
@@ -83,7 +82,6 @@ chmod +x py-mcp.sh
 | `search_codebase` | 高性能代码检索，自动跳过版本控制与缓存目录 |
 | `move_or_delete_file` | 安全移动、复制或移除受控沙箱内的文件与目录 |
 | `inspect_file_meta` | 查看文件大小、权限模式、最后修改时间及 SHA-256 哈希 |
-| `request_tool` | 统一系统命令执行网关，支持受控管道模式并接入 WebUI 审批 |
 | `find_process` | 免 root 解析 `/proc` 表，探查本地监听端口与对应进程 |
 | `take_github` | 统一 Git 与 GitHub CLI 接口，完全开放 git 与 gh 母命令与子命令执行权限 |
 
@@ -102,7 +100,6 @@ PyPhone-MCP-Server is a lightweight, high-performance Model Context Protocol (MC
 
 - **Zero External Dependencies**: Implemented purely using Python 3 standard library modules.
 - **MCP Streamable HTTP Transport**: Compliant with the MCP 2024-11-05 specification with Server-Sent Events (SSE) and session auto-recovery.
-- **Independent WebUI Authorization**: Commands require approval via the embedded WebUI (port 8080), featuring whitelist and blacklist policies.
 - **Multi-layer Security Sandbox**:
   - Confined strictly to the Termux root path (`/data/data/com.termux/files/home`), blocking relative path traversal (`..`) and absolute path escape.
   - Fully open `git` / `gh` subcommands; destructive operations are bounded by in-session user confirmation.
@@ -145,7 +142,7 @@ chmod +x py-mcp.sh
 
 Endpoints:
 - MCP Server: `http://<PHONE_IP>:3000/mcp`
-- WebUI Console: `http://<PHONE_IP>:8080`
+- Without `MCP_AUTH_TOKEN` only loopback is accepted; when set, requests must send `Authorization: Bearer <token>`
 
 ### Client Configuration
 

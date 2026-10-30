@@ -71,18 +71,6 @@ start() {
             [ -f "$LOG_FILE" ] && tail -n 15 "$LOG_FILE"
         fi
     fi
-
-    # 2. 启动 WebUI
-    local webui_pids
-    webui_pids=$(pgrep -f "src.webui" 2>/dev/null)
-    if [ -z "$webui_pids" ]; then
-        echo "[py-mcp] 正在启动 MCP 审批 WebUI..."
-        daemonize -c "$DIR" -o "$DIR/webui.log" -e "$DIR/webui.log" "$PYTHON_BIN" -m src.webui
-        echo "  - WebUI 端点: http://127.0.0.1:8080"
-    else
-        echo "[py-mcp] MCP 审批 WebUI 已在运行"
-        echo "  - WebUI 端点: http://127.0.0.1:8080"
-    fi
     return 0
 }
 
@@ -116,15 +104,6 @@ stop() {
         echo "[py-mcp] 服务已停止"
     fi
 
-    # 2. 停止 WebUI
-    local webui_pids
-    webui_pids=$(pgrep -f "src.webui" 2>/dev/null)
-    if [ -n "$webui_pids" ]; then
-        echo "[py-mcp] 正在停止 MCP 审批 WebUI..."
-        kill -9 $webui_pids 2>/dev/null || true
-        echo "[py-mcp] WebUI 已停止"
-    fi
-    
     return 0
 }
 
@@ -140,15 +119,6 @@ status() {
         print_endpoints "$pid"
     else
         echo "[py-mcp] 状态: 服务未运行"
-    fi
-
-    local webui_pids
-    webui_pids=$(pgrep -f "src.webui" 2>/dev/null)
-    if [ -n "$webui_pids" ]; then
-        echo "[py-mcp] 状态: WebUI 运行中"
-        echo "  - WebUI 端点: http://127.0.0.1:8080"
-    else
-        echo "[py-mcp] 状态: WebUI 未运行"
     fi
     return 0
 }
