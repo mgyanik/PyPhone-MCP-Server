@@ -118,3 +118,31 @@ def test_tools_list_all_renamed_tools():
         "take_github",
     }
     assert expected == names
+
+
+def test_unauthorized_rejected_and_closes_connection(monkeypatch):
+    server_module.load_tools()
+    monkeypatch.setattr(server_module, "AUTH_TOKEN", "secret")
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}).encode("utf-8")
+    raw_resp = _call_handler(
+        "POST",
+        "/mcp",
+        body=body,
+        headers={"Content-Type": "application/json", "Mcp-Session-Id": "s1"},
+    )
+    assert "401" in raw_resp
+    assert "Connection: close" in raw_resp
+    assert "Unauthorized" in raw_resp
+
+
+def test_non_dict_payload_rejected():
+    server_module.load_tools()
+    body = json.dumps([{"jsonrpc": "2.0", "id": 1, "method": "ping"}]).encode("utf-8")
+    raw_resp = _call_handler(
+        "POST",
+        "/mcp",
+        body=body,
+        headers={"Content-Type": "application/json"},
+    )
+    assert "400" in raw_resp
+    assert "not supported" in raw_resp

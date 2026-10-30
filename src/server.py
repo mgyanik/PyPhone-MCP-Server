@@ -75,11 +75,18 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         if session_id:
             self.send_header("Mcp-Session-Id", session_id)
+        if getattr(self, "close_connection", False):
+            self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
 
     def _send_error(self, code: int, message: str, req_id: Any = None, status: int = 400) -> None:
         self._send_json(protocol.make_error(req_id, code, message), status=status)
+
+    def _reject(self, code: int, message: str, status: int = 400) -> None:
+        """读取请求体之前拒绝请求时必须断开连接，否则残留请求体会污染下一次解析。"""
+        self.close_connection = True
+        self._send_error(code, message, status=status)
 
     def finish(self) -> None:
         """请求收尾：确保 SSE 连接名额一定被释放。"""
@@ -163,12 +170,11 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         """处理主要 MCP RPC 调用。"""
         if self.path != "/mcp":
-            self.send_response(404)
-            self.end_headers()
+            self._reject(protocol.METHOD_NOT_FOUND, f"Not found: {self.path}", status=404)
             return
 
         if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
-            self._send_error(
+            self._reject(
                 protocol.INVALID_REQUEST,
                 "Chunked transfer-encoding is not supported; send Content-Length",
                 status=400,
@@ -176,18 +182,18 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             return
 
         if not self._token_ok():
-            self._send_error(protocol.INVALID_REQUEST, "Unauthorized", status=401)
+            self._reject(protocol.INVALID_REQUEST, "Unauthorized", status=401)
             return
 
         content_length_hdr = self.headers.get("Content-Length")
         if not content_length_hdr:
-            self._send_error(protocol.INVALID_REQUEST, "Missing Content-Length header", status=400)
+            self._reject(protocol.INVALID_REQUEST, "Missing Content-Length header", status=400)
             return
 
         try:
             length = int(content_length_hdr)
         except ValueError:
-            self._send_error(protocol.INVALID_REQUEST, "Invalid Content-Length header", status=400)
+            self._reject(protocol.INVALID_REQUEST, "Invalid Content-Length header", status=400)
             return
 
         if length < 0 or length > MAX_REQUEST_BYTES:

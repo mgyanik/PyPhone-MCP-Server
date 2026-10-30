@@ -17,6 +17,12 @@ PID_FILE="$DIR/py-mcp.pid"
 LOG_FILE="$DIR/py-mcp.log"
 PORT="$( cd "$DIR" && "$PYTHON_BIN" -c 'from src.config import PORT; print(PORT)' 2>/dev/null || echo 3000 )"
 
+# 访问令牌：优先环境变量，其次 ~/.mcp_auth/mcp_token，daemonize 会继承已导出的变量
+if [ -z "${MCP_AUTH_TOKEN:-}" ] && [ -f "$HOME/.mcp_auth/mcp_token" ]; then
+    MCP_AUTH_TOKEN="$(tr -d '\r\n' < "$HOME/.mcp_auth/mcp_token")"
+fi
+export MCP_AUTH_TOKEN
+
 get_ip() {
     "$PYTHON_BIN" -c "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(('8.8.8.8', 80)); print(s.getsockname()[0]); s.close()" 2>/dev/null || echo "127.0.0.1"
 }
